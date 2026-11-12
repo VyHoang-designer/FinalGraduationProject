@@ -161,6 +161,43 @@ export default function ExplainableAIModal({ result, onClose }) {
             </div>
           </div>
           
+          {/* 🤖 LLM Skill Assessment (Gemini) */}
+          {result.skill_details && result.skill_details.length > 0 && (
+            <div className="modal__table-container" style={{ marginTop: '24px' }}>
+              <h3 className="modal__section-title">🤖 Đánh giá Kỹ năng AI (Gemini LLM)</h3>
+              <div className="feature-table">
+                <div className="feature-table__header" style={{ gridTemplateColumns: '1.4fr 1fr 3fr' }}>
+                  <span>Kỹ năng & Trọng số</span>
+                  <span>Mức độ (m)</span>
+                  <span>Lý do & Bằng chứng từ CV</span>
+                </div>
+                {result.skill_details.map((info, idx) => (
+                  <div key={idx} className="feature-table__row" style={{ gridTemplateColumns: '1.4fr 1fr 3fr', alignItems: 'start' }}>
+                    <div style={{ fontWeight: '600', textTransform: 'capitalize' }}>
+                      {info.skill}
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal', marginTop: '2px' }}>
+                        Trọng số: {info.weight === 3 ? 'Cốt lõi (x3)' : info.weight === 2 ? 'Bổ trợ (x2)' : 'Ưu tiên (x1)'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className={`badge ${info.m >= 0.75 ? 'badge--success' : info.m >= 0.5 ? 'badge--info' : info.m > 0 ? 'badge--warning' : 'badge--danger'}`}>
+                        Mức {Math.round(info.m * 4)} (m={info.m})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: '#475569', lineHeight: '1.4' }}>
+                      <div style={{ marginBottom: '4px' }}><strong>Lý do:</strong> {info.reason}</div>
+                      {info.evidence && info.evidence.length > 0 && (
+                        <div style={{ fontStyle: 'italic', color: '#334155', fontSize: '11.5px', background: '#f8fafc', padding: '6px 8px', borderRadius: '4px', borderLeft: '2px solid #0ea5e9' }}>
+                          <strong>Trích dẫn:</strong> "{info.evidence[0].quote}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Custom Criteria Analysis */}
           {result.custom_criteria_results && result.custom_criteria_results.length > 0 && (
             <div className="modal__table-container" style={{ marginTop: '24px' }}>

@@ -260,7 +260,12 @@ def trich_xuat_skill_match_ratio(cv_data, jd_data):
             cv_skills_lower.add(skill)
 
     # Tính tỷ lệ trùng khớp
-    jd_skills_lower = {s.lower() for s in jd_required_skills}
+    jd_skills_lower = set()
+    for s in jd_required_skills:
+        skill_str = s.get("skill", "") if isinstance(s, dict) else str(s)
+        if skill_str:
+            jd_skills_lower.add(skill_str.lower())
+    
     if not jd_skills_lower:
         return 0.0
 

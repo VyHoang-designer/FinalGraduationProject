@@ -6,6 +6,7 @@
 // ==============================================================================
 
 import { useState } from 'react';
+import { getAvatarUrl } from '../services/api';
 
 const SEVERITY_CONFIG = {
   high:   { color: '#ef4444', bg: '#fef2f2', icon: '🔴', label: 'Quan trọng' },
@@ -76,8 +77,8 @@ function GapCard({ gap }) {
 }
 
 function CandidateRow({ result, isExpanded, onToggle, onViewDetail }) {
-  const { rank, candidate_name, email, experience_years, parsed_skills,
-    match_score, match_level, is_best_match, gaps, feature_details, custom_criteria_results } = result;
+  const { rank, candidate_name, email, avatar_url, experience_years, parsed_skills,
+    match_score, match_level, is_best_match, gaps, feature_details, custom_criteria_results, skill_details } = result;
 
   const rankDisplay = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
   const initials = candidate_name.split(' ').map(w => w[0]).join('').slice(-2).toUpperCase();
@@ -95,7 +96,18 @@ function CandidateRow({ result, isExpanded, onToggle, onViewDetail }) {
       <div className="match-cv-card__row" onClick={onToggle}>
         <div className="match-cv-card__rank">{rankDisplay}</div>
 
-        <div className="match-cv-card__avatar">{initials}</div>
+        <div className="match-cv-card__avatar" style={{ overflow: 'hidden' }}>
+          {avatar_url ? (
+            <img 
+              src={getAvatarUrl(avatar_url)} 
+              alt={candidate_name} 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          ) : (
+            initials
+          )}
+        </div>
 
         <div className="match-cv-card__info">
           <div className="match-cv-card__name">
@@ -138,6 +150,41 @@ function CandidateRow({ result, isExpanded, onToggle, onViewDetail }) {
               ))}
             </div>
           </div>
+
+          {/* LLM Skill Assessment */}
+          {skill_details && skill_details.length > 0 && (
+            <div className="match-cv-card__detail-section">
+              <h4>🤖 Đánh giá Kỹ năng AI (Gemini)</h4>
+              <div className="feature-table">
+                <div className="feature-table__header" style={{ gridTemplateColumns: '1.5fr 1fr 3fr' }}>
+                  <span>Kỹ năng</span>
+                  <span>Mức độ (m)</span>
+                  <span>Lý do & Bằng chứng</span>
+                </div>
+                {skill_details.map((info, idx) => (
+                  <div key={idx} className="feature-table__row" style={{ gridTemplateColumns: '1.5fr 1fr 3fr', alignItems: 'start' }}>
+                    <div style={{ fontWeight: 'bold', textTransform: 'capitalize' }}>
+                      {info.skill}
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal' }}>Weight: {info.weight}</div>
+                    </div>
+                    <div>
+                      <span className={`badge ${info.m >= 0.75 ? 'badge--success' : info.m >= 0.5 ? 'badge--info' : info.m > 0 ? 'badge--warning' : 'badge--danger'}`}>
+                        Mức {info.m * 4} (m={info.m})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.4' }}>
+                      <div style={{ marginBottom: '4px' }}><strong>Lý do:</strong> {info.reason}</div>
+                      {info.evidence && info.evidence.length > 0 && (
+                        <div style={{ fontStyle: 'italic', color: '#64748b', fontSize: '12px', background: '#f8fafc', padding: '6px', borderRadius: '4px' }}>
+                          <strong>Trích dẫn:</strong> "{info.evidence[0].quote}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Feature Scores */}
           <div className="match-cv-card__detail-section">
@@ -257,14 +304,26 @@ export default function AIMatchModal({ jobTitle, results, processingTime, totalC
 
         {/* Candidate List */}
         <div className="ai-modal-list">
-          {results.map((result) => (
-            <CandidateRow
-              key={result.cv_id}
-              result={result}
-              isExpanded={expandedId === result.cv_id}
-              onToggle={() => toggleExpand(result.cv_id)}
-            />
-          ))}
+          {results.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 20px', color: '#64748b' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '12px' }}>📋</div>
+              <h4 style={{ margin: '0 0 6px', color: '#1e293b', fontSize: '1.1rem', fontWeight: 700 }}>
+                Chưa có ứng viên nào nộp hồ sơ
+              </h4>
+              <p style={{ margin: 0, fontSize: '0.88rem' }}>
+                Vị trí tuyển dụng này hiện chưa có ứng viên nộp hồ sơ. Các ứng viên sau khi nộp và được đánh giá qua AI sẽ tự động hiển thị tại đây.
+              </p>
+            </div>
+          ) : (
+            results.map((result) => (
+              <CandidateRow
+                key={result.cv_id}
+                result={result}
+                isExpanded={expandedId === result.cv_id}
+                onToggle={() => toggleExpand(result.cv_id)}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>

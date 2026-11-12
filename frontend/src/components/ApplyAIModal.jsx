@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchMyCVs, runMatch1To1, uploadCV } from '../services/api';
+import { fetchMyCVs, runMatch1To1, uploadCV, applyJob } from '../services/api';
 
-export default function ApplyAIModal({ job, currentUser, onClose }) {
+export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
   const [candidates, setCandidates] = useState([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [fileToUpload, setFileToUpload] = useState(null);
   
-  const [step, setStep] = useState('select-cv'); // select-cv, analyzing, result
+  const [step, setStep] = useState('select-cv'); // 'select-cv' | 'analyzing' | 'result' | 'confirm' | 'success'
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const fileInputRef = useRef(null);
 
@@ -59,15 +60,40 @@ export default function ApplyAIModal({ job, currentUser, onClose }) {
       const res = await runMatch1To1(cvIdToMatch, job.id);
       setResult({
         ...res,
+        _usedCandidateId: cvIdToMatch,
         _usedCandidate: cvIdToMatch === selectedCandidateId 
             ? candidates.find(c => c.id == cvIdToMatch) 
-            : null // If uploaded, we can fetch from candidates if we updated it, wait, let's just find it.
+            : null
       });
       // Giả lập delay một xíu cho đẹp hiệu ứng AI
       setTimeout(() => setStep('result'), 800);
     } catch (err) {
       setError(err.message);
       setStep('select-cv');
+    }
+  }
+
+  async function handleFinalSubmit() {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const cvId = result?._usedCandidateId || selectedCandidateId;
+      await applyJob({
+        user_id: currentUser?.id ? Number(currentUser.id) : null,
+        cv_id: Number(cvId),
+        jd_id: Number(job.id),
+        match_score: result?.match_score,
+        match_level: result?.match_level,
+        feature_details: result?.feature_details,
+        custom_criteria_results: result?.custom_criteria_results,
+        skill_details: result?.skill_details,
+      });
+      setIsSubmitting(false);
+      setStep('success');
+      if (onApplied) onApplied(job.id);
+    } catch (err) {
+      setIsSubmitting(false);
+      setError('Lỗi khi nộp hồ sơ: ' + err.message);
     }
   }
 
@@ -100,7 +126,7 @@ export default function ApplyAIModal({ job, currentUser, onClose }) {
       }
       if (job.required_skills && cand.parsed_skills) {
         const candSkillsLower = cand.parsed_skills.map(s => s.toLowerCase());
-        matchedSkills = job.required_skills.filter(s => candSkillsLower.includes(s.toLowerCase()));
+        matchedSkills = job.required_skills.filter(s => candSkillsLower.includes((typeof s === 'string' ? s : s.skill).toLowerCase()));
       }
     } else {
        // Nếu không tìm thấy candidate (ví dụ vừa upload), chỉ hiển thị thông báo chung chung nếu score cao
@@ -112,18 +138,20 @@ export default function ApplyAIModal({ job, currentUser, onClose }) {
       return <p>Chưa tìm thấy yếu tố cốt lõi nào nổi bật khớp với JD.</p>;
     }
 
+    const matchedSkillNames = matchedSkills.map(s => typeof s === 'string' ? s : s.skill);
+
     return (
       <p>
         {matchedExp ? `Đã có: ${matchedExp}` : ''}
-        {matchedExp && matchedSkills.length > 0 ? ' | ' : ''}
-        {matchedSkills.length > 0 ? `Kỹ năng khớp: ${matchedSkills.join(', ')}` : ''}
+        {matchedExp && matchedSkillNames.length > 0 ? ' | ' : ''}
+        {matchedSkillNames.length > 0 ? `Kỹ năng khớp: ${matchedSkillNames.join(', ')}` : ''}
       </p>
     );
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content ai-apply-modal" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-content ai-apply-modal ${step === 'result' ? 'ai-apply-modal--wide' : ''}`} onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose}>✕</button>
         
         {step === 'select-cv' && (
@@ -266,6 +294,74 @@ export default function ApplyAIModal({ job, currentUser, onClose }) {
               )}
             </div>
 
+            {/* 🤖 Đánh giá Chuyên sâu Kỹ năng từ LLM (Gemini) */}
+            {result.skill_details && result.skill_details.length > 0 && (
+              <div style={{ marginTop: '24px' }}>
+                <div className="ai-result-section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🤖</span> Đánh giá Kỹ năng AI (Gemini LLM)
+                </div>
+                <div className="feature-table" style={{ marginTop: '10px' }}>
+                  <div className="feature-table__header" style={{ gridTemplateColumns: '1.4fr 1fr 3fr' }}>
+                    <span>Kỹ năng & Trọng số</span>
+                    <span>Mức độ (m)</span>
+                    <span>Lý do & Bằng chứng từ CV</span>
+                  </div>
+                  {result.skill_details.map((info, idx) => (
+                    <div key={idx} className="feature-table__row" style={{ gridTemplateColumns: '1.4fr 1fr 3fr', alignItems: 'start', padding: '10px 12px' }}>
+                      <div style={{ fontWeight: '600', textTransform: 'capitalize' }}>
+                        {info.skill}
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal', marginTop: '2px' }}>
+                          Trọng số: {info.weight === 3 ? 'Cốt lõi (x3)' : info.weight === 2 ? 'Bổ trợ (x2)' : 'Ưu tiên (x1)'}
+                        </div>
+                      </div>
+                      <div>
+                        <span className={`badge ${info.m >= 0.75 ? 'badge--success' : info.m >= 0.5 ? 'badge--info' : info.m > 0 ? 'badge--warning' : 'badge--danger'}`}>
+                          Mức {Math.round(info.m * 4)} (m={info.m})
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12.5px', color: '#475569', lineHeight: '1.4' }}>
+                        <div style={{ marginBottom: '4px' }}><strong>Lý do:</strong> {info.reason}</div>
+                        {info.evidence && info.evidence.length > 0 && (
+                          <div style={{ fontStyle: 'italic', color: '#334155', fontSize: '11.5px', background: '#f1f5f9', padding: '6px 8px', borderRadius: '4px', borderLeft: '2px solid #0ea5e9' }}>
+                            <strong>Trích dẫn CV:</strong> "{info.evidence[0].quote}"
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ✨ Tiêu chí tùy chỉnh từ HR (Hybrid Scoring) */}
+            {result.custom_criteria_results && result.custom_criteria_results.length > 0 && (
+              <div style={{ marginTop: '24px' }}>
+                <div className="ai-result-section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>✨</span> Tiêu chí đặc thù từ HR
+                </div>
+                <div className="feature-table" style={{ marginTop: '10px' }}>
+                  <div className="feature-table__header" style={{ gridTemplateColumns: '1fr 2fr 1fr 1fr' }}>
+                    <span>Trạng thái</span>
+                    <span>Tiêu chí</span>
+                    <span>Cấp độ</span>
+                    <span>Tác động</span>
+                  </div>
+                  {result.custom_criteria_results.map((c, idx) => (
+                    <div key={idx} className="feature-table__row" style={{ gridTemplateColumns: '1fr 2fr 1fr 1fr' }}>
+                      <div>{c.met ? <span style={{ color: '#10b981', fontWeight: 'bold' }}>✓ ĐẠT</span> : <span style={{ color: '#ef4444', fontWeight: 'bold' }}>✕ THIẾU</span>}</div>
+                      <div style={{ fontWeight: 500 }}>{c.name}</div>
+                      <div style={{ textTransform: 'uppercase', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>{c.level}</div>
+                      <div className={`feature-table__value ${c.score_impact >= 0 ? 'value--positive' : 'value--negative'}`}>
+                        {c.score_impact >= 0 ? `+${c.score_impact}đ` : `${c.score_impact}đ`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {error && <div className="alert alert--error" style={{ marginTop: '16px' }}>{error}</div>}
+
             <div className="modal-actions" style={{ marginTop: '32px' }}>
               <button className="btn btn--outline" onClick={onClose} style={{ padding: '10px 16px' }}>Hủy bỏ</button>
               {result.match_score < 70 || (result.gaps && result.gaps.length > 0) ? (
@@ -273,8 +369,67 @@ export default function ApplyAIModal({ job, currentUser, onClose }) {
                    🪄 Dùng AI Tối ưu lại CV
                  </button>
               ) : null}
-              <button className="btn btn--primary ai-btn-primary" onClick={() => { alert('Ứng tuyển thành công!'); onClose(); }} style={{ padding: '10px 24px' }}>
+              <button className="btn btn--primary ai-btn-primary" onClick={() => setStep('confirm')} style={{ padding: '10px 24px' }}>
                 Xác nhận nộp CV
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: Form Xác Nhận Lần Cuối */}
+        {step === 'confirm' && (
+          <div className="ai-apply-step ai-apply-step--center" style={{ padding: '20px 0', maxWidth: '480px', margin: '0 auto' }}>
+            <div className="confirm-icon">📋</div>
+            <h3 className="confirm-title" style={{ fontSize: '1.4rem' }}>Xác nhận nộp hồ sơ</h3>
+            <p className="confirm-desc" style={{ fontSize: '0.95rem', color: '#475569', marginBottom: '20px' }}>
+              Bạn có chắc chắn muốn nộp hồ sơ cho vị trí <strong>{job.title}</strong>?
+            </p>
+            <div className="confirm-highlight-box" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', textAlign: 'left', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '1.2rem' }}>🎯</span>
+                <span style={{ fontSize: '1.05rem' }}>Độ phù hợp AI: <strong style={{ color: '#10b981' }}>{Math.round(result?.match_score || 0)}%</strong> ({result?.match_level})</span>
+              </div>
+              <div style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '6px' }}>
+                🏢 Đơn vị: <strong>{job.department || 'APEX IT'}</strong> — 📍 {job.location || 'Hồ Chí Minh'}
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: '1.5', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '8px' }}>
+                ℹ️ Toàn bộ đánh giá chi tiết kỹ năng và dữ liệu phân tích sẽ được chuyển thẳng đến Nhà tuyển dụng để đánh giá vòng sơ tuyển.
+              </div>
+            </div>
+
+            {error && <div className="alert alert--error" style={{ marginBottom: '16px', width: '100%' }}>{error}</div>}
+
+            <div className="confirm-actions" style={{ display: 'flex', gap: '12px', width: '100%' }}>
+              <button className="btn btn--outline" onClick={() => setStep('result')} disabled={isSubmitting} style={{ flex: 1, padding: '12px' }}>
+                Quay lại xem lại
+              </button>
+              <button className="btn btn--primary ai-btn-primary" onClick={handleFinalSubmit} disabled={isSubmitting} style={{ flex: 1.4, padding: '12px' }}>
+                {isSubmitting ? 'Đang gửi hồ sơ...' : 'Xác nhận nộp ngay 🚀'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: Màn Hình Nộp Hồ Sơ Thành Công */}
+        {step === 'success' && (
+          <div className="ai-apply-step ai-apply-step--center" style={{ padding: '24px 0', maxWidth: '480px', margin: '0 auto' }}>
+            <div style={{ fontSize: '4.5rem', marginBottom: '16px' }}>🎉</div>
+            <h2 className="ai-apply-title" style={{ color: '#10b981', marginBottom: '8px' }}>
+              Nộp hồ sơ ứng tuyển thành công!
+            </h2>
+            <p style={{ color: '#475569', fontSize: '1rem', maxWidth: '440px', margin: '0 auto 24px', lineHeight: '1.6' }}>
+              Hồ sơ của bạn đã được chuyển tới bộ phận tuyển dụng <strong>{job.department || 'APEX IT'}</strong> kèm theo toàn bộ phân tích độ phù hợp từ AI.
+            </p>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '14px 20px', borderRadius: '12px', display: 'inline-block', marginBottom: '28px', textAlign: 'left', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ fontSize: '0.88rem', color: '#64748b' }}>Vị trí ứng tuyển:</div>
+              <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '1.05rem', marginTop: '2px' }}>{job.title}</div>
+              <div style={{ marginTop: '6px', fontSize: '0.88rem', color: '#10b981', fontWeight: 600 }}>
+                ✓ Độ phù hợp AI: {Math.round(result?.match_score || 0)}% ({result?.match_level})
+              </div>
+            </div>
+            <div>
+              <button className="btn btn--primary ai-btn-primary" onClick={onClose} style={{ padding: '12px 36px', fontSize: '1rem' }}>
+                Hoàn tất & Đóng
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@
 export default function MatchResultCard({ result, rank, onViewDetails, onAssign }) {
   const score = result.match_score;
   const level = result.match_level;
+  const isHired = result.status === 'hired';
 
   // Color coding based on score
   const getScoreColor = (s) => {
@@ -62,11 +63,27 @@ export default function MatchResultCard({ result, rank, onViewDetails, onAssign 
         </div>
 
         {/* Match Level Badge */}
-        <div className="match-card__badges">
+        <div className="match-card__badges" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+          {isHired && (
+            <span style={{
+              background: '#dcfce7',
+              color: '#15803d',
+              border: '1px solid #86efac',
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              padding: '2px 8px',
+              borderRadius: '20px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <span>🎉</span> Đã tuyển
+            </span>
+          )}
           <span className={`badge ${getBadgeClass(score)}`}>{level}</span>
           {/* Required Skills preview */}
           {(result.job_required_skills || []).slice(0, 3).map((skill, i) => (
-            <span key={i} className="badge badge--neutral">{skill}</span>
+            <span key={i} className="badge badge--neutral">{typeof skill === 'string' ? skill : skill.skill}</span>
           ))}
           {(result.job_required_skills || []).length > 3 && (
             <span className="badge badge--neutral">+{result.job_required_skills.length - 3}</span>
@@ -82,12 +99,37 @@ export default function MatchResultCard({ result, rank, onViewDetails, onAssign 
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             Chi tiết AI
           </button>
-          <button
-            className="btn-primary-sm"
-            onClick={() => onAssign(result)}
-          >
-            Assign vị trí này
-          </button>
+          {isHired ? (
+            <button
+              className="btn-hired-sm"
+              onClick={() => onAssign(result)}
+              title="Ứng viên đã được tuyển dụng vào vị trí này. Nhấn để xem hoặc cập nhật thông tin."
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'linear-gradient(135deg, #059669, #10b981)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
+                transition: 'all 0.2s',
+              }}
+            >
+              <span>✓</span> Đã tuyển
+            </button>
+          ) : (
+            <button
+              className="btn-primary-sm"
+              onClick={() => onAssign(result)}
+            >
+              Assign vị trí này
+            </button>
+          )}
         </div>
       </div>
     </div>

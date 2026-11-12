@@ -8,6 +8,7 @@ import HRCandidateHeader from '../components/HRCandidateHeader';
 import CVDetailPanel from '../components/CVDetailPanel';
 import MatchResultsList from '../components/MatchResultsList';
 import ExplainableAIModal from '../components/ExplainableAIModal';
+import AssignJobModal from '../components/AssignJobModal';
 import { fetchCandidate, runMatch1ToN, fetchMatchResults } from '../services/api';
 
 export default function CandidateDetail({ candidateId, onNavigate }) {
@@ -18,6 +19,7 @@ export default function CandidateDetail({ candidateId, onNavigate }) {
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [error, setError] = useState(null);
   const [modalResult, setModalResult] = useState(null);
+  const [assignJobTarget, setAssignJobTarget] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -112,7 +114,7 @@ export default function CandidateDetail({ candidateId, onNavigate }) {
             results={matchResults}
             processingTime={processingTime}
             onViewDetails={(r) => setModalResult(r)}
-            onAssign={(r) => showToast(`🎉 Đã assign vào "${r.job_title}"`)}
+            onAssign={(r) => setAssignJobTarget(r)}
           />
         </div>
       </div>
@@ -121,6 +123,27 @@ export default function CandidateDetail({ candidateId, onNavigate }) {
       {modalResult && (
         <ExplainableAIModal result={modalResult} onClose={() => setModalResult(null)} />
       )}
+
+      {/* Assign Job Modal */}
+      <AssignJobModal
+        isOpen={Boolean(assignJobTarget)}
+        candidate={candidate}
+        job={assignJobTarget}
+        onClose={() => setAssignJobTarget(null)}
+        onAssignSuccess={(updated) => {
+          setMatchResults((prev) =>
+            prev.map((m) => {
+              const isTarget =
+                (m.jd_id && m.jd_id === updated.jd_id) ||
+                (m.id && m.id === updated.id);
+              return isTarget ? { ...m, ...updated, status: 'hired' } : m;
+            })
+          );
+          showToast(
+            `🎉 Đã assign và tuyển ứng viên "${candidate.full_name}" vào vị trí "${updated.job_title}" thành công! Đã gửi thông báo đến ứng viên.`
+          );
+        }}
+      />
 
       {/* Toast */}
       {toast && <div className={`toast toast--${toast.type}`}>{toast.message}</div>}

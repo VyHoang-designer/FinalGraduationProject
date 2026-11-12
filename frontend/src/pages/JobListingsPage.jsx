@@ -7,9 +7,10 @@ import { useState, useEffect } from 'react';
 import JobCard from '../components/JobCard';
 import AIMatchModal from '../components/AIMatchModal';
 import JDFormModal from '../components/JDFormModal';
+import AppliedCandidatesModal from '../components/AppliedCandidatesModal';
 import { fetchJobs, runMatchNTo1 } from '../services/api';
 
-export default function JobListingsPage({ onNavigate }) {
+export default function JobListingsPage({ onNavigate, globalSearchTerm }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -24,6 +25,10 @@ export default function JobListingsPage({ onNavigate }) {
   // JD Form state
   const [isJDFormOpen, setIsJDFormOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
+
+  // Applied Candidates Modal state
+  const [selectedStageJob, setSelectedStageJob] = useState(null);
+  const [selectedStageKey, setSelectedStageKey] = useState('applied');
 
   useEffect(() => {
     loadJobs();
@@ -42,8 +47,19 @@ export default function JobListingsPage({ onNavigate }) {
   }
 
   const filteredJobs = jobs.filter(j => {
-    if (filter === 'active') return j.is_active;
-    if (filter === 'closed') return !j.is_active;
+    if (filter === 'active' && !j.is_active) return false;
+    if (filter === 'closed' && j.is_active) return false;
+
+    if (globalSearchTerm) {
+      const lowerSearch = globalSearchTerm.toLowerCase();
+      if (!((j.title || '').toLowerCase().includes(lowerSearch) ||
+            (j.department || '').toLowerCase().includes(lowerSearch) ||
+            (j.required_skills || []).some(s => (typeof s === 'string' ? s : s.skill).toLowerCase().includes(lowerSearch)) ||
+            (j.location || '').toLowerCase().includes(lowerSearch))) {
+        return false;
+      }
+    }
+    
     return true;
   });
 
@@ -122,11 +138,11 @@ export default function JobListingsPage({ onNavigate }) {
         </div>
       </div>
 
-      {/* Loading overlay khi AI đang chạy */}
+      {/* Loading overlay khi tải kết quả AI */}
       {matchLoading && (
         <div className="ai-loading-banner">
           <div className="spinner spinner--sm" />
-          <span>🧬 Đang phân tích AI, vui lòng đợi...</span>
+          <span>🧬 Đang tải kết quả đánh giá AI của ứng viên...</span>
         </div>
       )}
 
@@ -140,7 +156,16 @@ export default function JobListingsPage({ onNavigate }) {
           </div>
         ) : (
           filteredJobs.map((job) => (
-            <JobCard key={job.id} job={job} onViewCandidates={handleAIMatch} onEditJob={(j) => { setSelectedJob(j); setIsJDFormOpen(true); }} />
+            <JobCard 
+              key={job.id} 
+              job={job} 
+              onViewCandidates={handleAIMatch} 
+              onEditJob={(j) => { setSelectedJob(j); setIsJDFormOpen(true); }}
+              onSelectStage={(j, stageKey) => {
+                setSelectedStageJob(j);
+                setSelectedStageKey(stageKey);
+              }}
+            />
           ))
         )}
       </div>
@@ -153,6 +178,19 @@ export default function JobListingsPage({ onNavigate }) {
           processingTime={matchResult.processing_time_ms}
           totalCandidates={matchResult.total_candidates}
           onClose={() => setMatchResult(null)}
+        />
+      )}
+
+      {/* ★ Applied Candidates Pipeline Modal ★ */}
+      {selectedStageJob && (
+        <AppliedCandidatesModal
+          job={selectedStageJob}
+          initialStage={selectedStageKey}
+          onClose={() => {
+            setSelectedStageJob(null);
+            loadJobs();
+          }}
+          onStatusChanged={loadJobs}
         />
       )}
 

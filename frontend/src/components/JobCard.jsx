@@ -11,9 +11,9 @@ const PIPELINE_STAGES = [
   { key: 'hired', label: 'Đã tuyển', color: '#10b981' },
 ];
 
-export default function JobCard({ job, matchCounts, onViewCandidates, onEditJob }) {
-  // Simulated pipeline counts (in real app, these come from match_results aggregation)
-  const counts = matchCounts || {
+export default function JobCard({ job, matchCounts, onViewCandidates, onEditJob, onSelectStage }) {
+  // Pipeline counts from backend database aggregation
+  const counts = matchCounts || job.pipeline_counts || {
     applied: 0, screening: 0, interview: 0, offer: 0, hired: 0
   };
   const totalCandidates = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -40,7 +40,7 @@ export default function JobCard({ job, matchCounts, onViewCandidates, onEditJob 
             <span>Cần tuyển: {job.required_experience > 0 ? `${job.required_experience}+ năm KN` : 'Không yêu cầu'}</span>
             {job.required_skills && job.required_skills.length > 0 && (
               <span className="job-card__skills-preview">
-                {job.required_skills.slice(0, 3).join(', ')}
+                {job.required_skills.slice(0, 3).map(s => typeof s === 'string' ? s : s.skill).join(', ')}
                 {job.required_skills.length > 3 && ` +${job.required_skills.length - 3}`}
               </span>
             )}
@@ -68,25 +68,33 @@ export default function JobCard({ job, matchCounts, onViewCandidates, onEditJob 
 
       {/* Pipeline Stages */}
       <div className="job-card__pipeline">
-        {PIPELINE_STAGES.map((stage) => (
-          <div key={stage.key} className="pipeline-stage">
-            <div className="pipeline-stage__count" style={{ color: stage.color }}>
-              {counts[stage.key] || 0}
+        {PIPELINE_STAGES.map((stage) => {
+          const count = counts[stage.key] || 0;
+          return (
+            <div 
+              key={stage.key} 
+              className={`pipeline-stage ${count > 0 ? 'pipeline-stage--clickable' : ''}`}
+              onClick={() => onSelectStage && onSelectStage(job, stage.key)}
+              title={`Nhấn để xem ứng viên ở bước: ${stage.label} (${count})`}
+            >
+              <div className="pipeline-stage__count" style={{ color: stage.color }}>
+                {count}
+              </div>
+              <div className="pipeline-stage__label">{stage.label}</div>
+              <div className="pipeline-stage__bar">
+                <div
+                  className="pipeline-stage__bar-fill"
+                  style={{
+                    width: totalCandidates > 0
+                      ? `${(count / totalCandidates) * 100}%`
+                      : '0%',
+                    backgroundColor: stage.color
+                  }}
+                />
+              </div>
             </div>
-            <div className="pipeline-stage__label">{stage.label}</div>
-            <div className="pipeline-stage__bar">
-              <div
-                className="pipeline-stage__bar-fill"
-                style={{
-                  width: totalCandidates > 0
-                    ? `${((counts[stage.key] || 0) / totalCandidates) * 100}%`
-                    : '0%',
-                  backgroundColor: stage.color
-                }}
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

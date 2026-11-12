@@ -124,8 +124,11 @@ class AIMatchingEngine:
         score = 0.0
 
         # 1. Kỹ năng (Max: 40đ)
-        skill_ratio = extracted_features.get("Skill_Match_Ratio", 0.0)
-        score += skill_ratio * 40
+        if extracted_features.get("Skill_Applicable", 0.0) == 1.0:
+            score += extracted_features.get("Skill_Fit_Score", 0.0) * 40
+        else:
+            skill_ratio = extracted_features.get("Skill_Match_Ratio", 0.0)
+            score += skill_ratio * 40
 
         # 2. Kinh nghiệm (Max: 20đ)
         # Khởi điểm 10đ. Đủ KN -> +10đ. Thiếu 1 năm -> -5đ. Thừa 1 năm -> +2đ
@@ -223,21 +226,62 @@ class AIMatchingEngine:
     def match_cv_to_jd(self, cv_data: dict, jd_data: dict) -> dict:
         """
         Đánh giá 1 cặp CV-JD.
-
-        Args:
-            cv_data: dict chứa 'cv_text', 'project_descriptions' (optional)
-            jd_data: dict chứa 'jd_text', 'required_experience',
-                     'required_skills', 'project_keywords'
-
-        Returns:
-            dict: {
-                'feature_details': {...},
-                'match_score': float | None,
-                'match_level': str
-            }
         """
-        # Trích xuất toàn bộ features bằng pipeline
+        from skill_llm_service import evaluate_skills
+        from skill_scoring import calculate_skill_score
+        
+        # 1. Trích xuất features cơ bản
         features = self.pipeline.tinh_toan_toan_bo_tieu_chi(cv_data, jd_data)
+
+        # 2. Gọi Gemini đánh giá kỹ năng
+        req_skills_raw = jd_data.get("required_skills", [])
+        requirements = []
+        for s in req_skills_raw:
+            if isinstance(s, dict):
+                requirements.append({"skill": s.get("skill", ""), "importance": s.get("importance", "core")})
+            else:
+                requirements.append({"skill": str(s), "importance": "core"})
+
+        cv_sources = []
+        if cv_data.get("cv_text"):
+            cv_sources.append({"source_id": "cv", "section": "full_text", "text": cv_data["cv_text"]})
+        if cv_data.get("project_descriptions"):
+            for idx, p in enumerate(cv_data["project_descriptions"]):
+                cv_sources.append({"source_id": f"proj_{idx}", "section": "projects", "text": p})
+
+        skill_details_info = []
+        if requirements:
+            try:
+                assessments = evaluate_skills(cv_sources, requirements)
+                skill_result = calculate_skill_score(requirements, assessments)
+                features["Skill_Fit_Score"] = skill_result.get("skill_fit_score", 0.0)
+                features["Skill_Applicable"] = 1.0
+                skill_details_info = skill_result.get("skill_details", [])
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str:
+                    print("  [AIEngine] LLM Assessment Error: Hết Quota (429). Chuyển sang chấm điểm dự phòng.")
+                else:
+                    print(f"  [AIEngine] LLM Assessment Error: {err_str[:150]}...")
+                # Heuristic fallback cho skill_details khi LLM gặp lỗi/hết quota
+                cv_full_lower = (cv_data.get("cv_text") or "").lower()
+                skill_details_info = []
+                for req in requirements:
+                    s_name = req["skill"]
+                    weight = 3 if req.get("importance") == "core" else 2 if req.get("importance") == "supporting" else 1
+                    found = s_name.lower() in cv_full_lower
+                    skill_details_info.append({
+                        "skill": s_name,
+                        "weight": weight,
+                        "m": 0.5 if found else 0.0,
+                        "reason": f"Từ khóa xuất hiện trong CV (Fallback heuristic)" if found else "Không tìm thấy từ khóa trong CV",
+                        "evidence": [{"source_id": "cv", "quote": s_name}] if found else []
+                    })
+                features["Skill_Fit_Score"] = features.get("Skill_Match_Ratio", 0.0)
+                features["Skill_Applicable"] = 1.0 if skill_details_info else 0.0
+        else:
+            features["Skill_Fit_Score"] = 0.0
+            features["Skill_Applicable"] = 0.0
 
         # Dự đoán điểm
         score = self.predict_score(features)
@@ -256,29 +300,27 @@ class AIMatchingEngine:
             "match_score": score if score is not None else 0.0,
             "match_level": level,
             "custom_criteria_results": custom_criteria_results,
+            "skill_details": skill_details_info
         }
 
-    def match_cv_to_all_jds(self, cv_data: dict, jd_list: list[dict]) -> list[dict]:
+    def match_cv_to_all_jds(self, cv_data: dict, jd_list: list[dict]) -> tuple[list[dict], float]:
         """
-        Core 1-to-N Logic: Đánh giá 1 CV với TẤT CẢ JDs.
-
-        Args:
-            cv_data: dict CV
-            jd_list: list[dict] mỗi dict chứa {'jd_id': int, 'jd_data': dict}
-
-        Returns:
-            list[dict]: Kết quả đã xếp hạng từ cao → thấp
+        Core 1-to-N Logic: Đánh giá 1 CV với TẤT CẢ JDs song song.
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         start_time = time.time()
-        results = []
-
-        for jd_info in jd_list:
+        
+        def eval_single_jd(jd_info):
             jd_id = jd_info["jd_id"]
             jd_data = jd_info["jd_data"]
+            res = self.match_cv_to_jd(cv_data, jd_data)
+            res["jd_id"] = jd_id
+            return res
 
-            result = self.match_cv_to_jd(cv_data, jd_data)
-            result["jd_id"] = jd_id
-            results.append(result)
+        max_workers = min(max(len(jd_list), 1), 5)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(eval_single_jd, jd_list))
 
         # Xếp hạng từ cao → thấp
         results.sort(key=lambda x: x["match_score"], reverse=True)
@@ -288,25 +330,22 @@ class AIMatchingEngine:
 
     def match_jd_to_all_cvs(self, jd_data: dict, cv_list: list[dict]) -> tuple[list[dict], float]:
         """
-        Core N-to-1 Logic: Đánh giá 1 JD với TẤT CẢ CVs.
-
-        Args:
-            jd_data: dict JD info
-            cv_list: list[dict] mỗi dict chứa {'cv_id': int, 'cv_data': dict}
-
-        Returns:
-            tuple: (ranked_results, elapsed_ms)
+        Core N-to-1 Logic: Đánh giá 1 JD với TẤT CẢ CVs song song.
         """
-        start_time = time.time()
-        results = []
+        from concurrent.futures import ThreadPoolExecutor
 
-        for cv_info in cv_list:
+        start_time = time.time()
+        
+        def eval_single_cv(cv_info):
             cv_id = cv_info["cv_id"]
             cv_data = cv_info["cv_data"]
+            res = self.match_cv_to_jd(cv_data, jd_data)
+            res["cv_id"] = cv_id
+            return res
 
-            result = self.match_cv_to_jd(cv_data, jd_data)
-            result["cv_id"] = cv_id
-            results.append(result)
+        max_workers = min(max(len(cv_list), 1), 5)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(eval_single_cv, cv_list))
 
         # Xếp hạng từ cao → thấp
         results.sort(key=lambda x: x["match_score"], reverse=True)
@@ -325,7 +364,12 @@ class AIMatchingEngine:
           - message: mô tả thiếu sót cụ thể
         """
         gaps = []
-        required_skills = [s.lower().strip() for s in (jd_data.get("required_skills") or [])]
+        raw_req_skills = jd_data.get("required_skills") or []
+        required_skills = []
+        for s in raw_req_skills:
+            skill_str = s.get("skill", "") if isinstance(s, dict) else str(s)
+            if skill_str:
+                required_skills.append(skill_str.lower().strip())
         cv_skills = [s.lower().strip() for s in (cv_data.get("parsed_skills") or [])]
 
         # 1. Phân tích Skill Gap

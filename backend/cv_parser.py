@@ -457,8 +457,14 @@ def extract_education(text: str) -> Optional[str]:
     match = re.search(section_pattern, text, re.IGNORECASE | re.DOTALL)
     if match:
         edu_text = match.group(1).strip()
-        # Lấy tối đa 500 ký tự
-        return edu_text[:500] if edu_text else None
+        lines = [line.strip() for line in edu_text.split('\n') if line.strip()]
+        if lines:
+            core_edu = lines[0]
+            # Loại bỏ thông tin thừa như GPA, ngày tốt nghiệp, v.v. bằng regex split
+            core_edu = re.split(r'\||expected|cumulative|gpa|academic|tốt nghiệp', core_edu, flags=re.IGNORECASE)[0].strip()
+            core_edu = core_edu.rstrip(',;-| ')
+            return core_edu[:150] if core_edu else None
+        return None
 
     # Fallback: Tìm từ khóa học vấn
     edu_keywords = [

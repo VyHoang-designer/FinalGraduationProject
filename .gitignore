@@ -19,6 +19,8 @@ backend/uploads/
 model_artifacts/*.joblib
 model_artifacts/*.pkl
 *.spacy
+*.db
+*.sqlite3
 
 # OS
 .DS_Store

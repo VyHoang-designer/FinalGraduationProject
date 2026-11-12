@@ -6,7 +6,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import CandidateHeader from '../components/CandidateHeader';
 import ApplyAIModal from '../components/ApplyAIModal';
-import { fetchJobs } from '../services/api';
+import CandidateInterviewModal from '../components/CandidateInterviewModal';
+import CVBuilderModal from '../components/CVBuilderModal';
+import { fetchJobs, fetchAppliedJobs, fetchCandidateInterviews } from '../services/api';
 
 // Helper: tính số ngày còn lại
 function daysRemaining(expiredTime) {
@@ -17,7 +19,14 @@ function daysRemaining(expiredTime) {
   return diff;
 }
 
-function JobCard({ job, showExpiry = false, onApplyClick }) {
+const BANNER_IMAGES = [
+  { id: 1, src: '/images/banner.png', alt: 'Khám phá việc làm IT cùng AI' },
+  { id: 2, src: '/images/banner2.png', alt: 'Cơ hội nghề nghiệp công nghệ hấp dẫn' },
+  { id: 3, src: '/images/banner3.png', alt: 'Đánh giá CV chuẩn ATS với AI' },
+  { id: 4, src: '/images/banner4.png', alt: 'Kết nối việc làm IT hàng đầu' },
+];
+
+function JobCard({ job, showExpiry = false, onApplyClick, onContactClick, isApplied = false }) {
   const days = daysRemaining(job.expired_time);
   const isUrgent = days !== null && days <= 7 && days >= 0;
   const isExpired = days !== null && days < 0;
@@ -65,7 +74,7 @@ function JobCard({ job, showExpiry = false, onApplyClick }) {
 
       <div className="candidate-job-card__tags">
         {(job.required_skills || []).slice(0, 3).map((skill, i) => (
-          <span key={i} className="candidate-tag">{skill}</span>
+          <span key={i} className="candidate-tag">{typeof skill === 'string' ? skill : skill.skill}</span>
         ))}
         {(job.required_skills || []).length > 3 && (
           <span className="candidate-tag candidate-tag--more">+{job.required_skills.length - 3}</span>
@@ -78,43 +87,178 @@ function JobCard({ job, showExpiry = false, onApplyClick }) {
         <span className="candidate-tag candidate-tag--meta">CNTT</span>
       </div>
 
-      <button className="candidate-job-card__apply" onClick={() => onApplyClick(job)}>
-        Ứng tuyển ngay bằng AI
-      </button>
+      <div className="candidate-job-card__actions">
+        {isApplied ? (
+          <button 
+            type="button"
+            className="candidate-job-card__btn-apply candidate-job-card__btn-apply--applied" 
+            disabled
+            title="Bạn đã nộp hồ sơ cho vị trí tuyển dụng này"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Đã ứng tuyển</span>
+          </button>
+        ) : (
+          <button 
+            type="button"
+            className="candidate-job-card__btn-apply" 
+            onClick={() => onApplyClick(job)}
+            title="Ứng tuyển ngay & nhận phân tích AI Match"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+              <path d="M5 3v4M3 5h4M19 17v4M17 19h4"/>
+            </svg>
+            <span>Ứng tuyển AI</span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="candidate-job-card__btn-contact"
+          onClick={() => onContactClick && onContactClick(job)}
+          title="Liên hệ & Hỏi đáp với Nhà tuyển dụng về vị trí này"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Liên hệ</span>
+        </button>
+      </div>
     </div>
   );
 }
 
-export default function CandidatePortal({ currentUser, onLogout, onNavigate }) {
+export default function CandidatePortal({ currentUser, onLogout, onNavigate, autoOpenCVBuilder = false }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedJobForApply, setSelectedJobForApply] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [interviews, setInterviews] = useState([]);
+  const [selectedInterviewForModal, setSelectedInterviewForModal] = useState(null);
+  const [isCVBuilderOpen, setIsCVBuilderOpen] = useState(autoOpenCVBuilder);
+
+  // Carousel Banner State
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+
+  // Tự động chuyển đổi ảnh banner sau khoảng 10 giây
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentBannerIndex(prev => (prev + 1) % BANNER_IMAGES.length);
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [currentBannerIndex]);
+
+  function handlePrevBanner(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setCurrentBannerIndex(prev => (prev === 0 ? BANNER_IMAGES.length - 1 : prev - 1));
+  }
+
+  function handleNextBanner(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setCurrentBannerIndex(prev => (prev + 1) % BANNER_IMAGES.length);
+  }
+  
+  // Danh sách các Job ID đã nộp hồ sơ
+  const [appliedJobIds, setAppliedJobIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem(`applied_jobs_${currentUser?.id || 'guest'}`);
+      return new Set(stored ? JSON.parse(stored) : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  async function loadJobs() {
+    try {
+      const data = await fetchJobs(true);
+      setJobs(data);
+    } catch (err) {
+      console.error("Lỗi khi tải việc làm:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadAppliedJobs() {
+    if (!currentUser?.id) return;
+    try {
+      const data = await fetchAppliedJobs(currentUser.id);
+      if (data?.applied_jd_ids) {
+        setAppliedJobIds(prev => {
+          const merged = new Set([...prev, ...data.applied_jd_ids]);
+          localStorage.setItem(`applied_jobs_${currentUser.id}`, JSON.stringify(Array.from(merged)));
+          return merged;
+        });
+      }
+    } catch (err) {
+      console.error("Lỗi khi tải việc đã ứng tuyển:", err);
+    }
+  }
+
+  async function loadInterviews() {
+    if (!currentUser?.id) return;
+    try {
+      const data = await fetchCandidateInterviews(currentUser.id);
+      setInterviews(data || []);
+    } catch (err) {
+      console.error("Lỗi khi tải lịch phỏng vấn:", err);
+    }
+  }
 
   useEffect(() => {
-    async function loadJobs() {
-      try {
-        const data = await fetchJobs(true);
-        setJobs(data);
-      } catch (err) {
-        console.error("Lỗi khi tải việc làm:", err);
-      } finally {
-        setLoading(false);
-      }
+    loadJobs();
+    loadAppliedJobs();
+    loadInterviews();
+  }, [currentUser?.id]);
+
+  function handleJobApplied(jobId) {
+    if (jobId) {
+      setAppliedJobIds(prev => {
+        const next = new Set([...prev, jobId]);
+        const storageKey = `applied_jobs_${currentUser?.id || 'guest'}`;
+        localStorage.setItem(storageKey, JSON.stringify(Array.from(next)));
+        return next;
+      });
     }
     loadJobs();
-  }, []);
+  }
+
+  const filteredJobs = useMemo(() => {
+    if (!searchTerm) return jobs;
+    const lowerSearch = searchTerm.toLowerCase();
+    return jobs.filter(job => 
+      (job.title || '').toLowerCase().includes(lowerSearch) ||
+      (job.department || '').toLowerCase().includes(lowerSearch) ||
+      (job.required_skills || []).some(s => (typeof s === 'string' ? s : s.skill).toLowerCase().includes(lowerSearch)) ||
+      (job.location || '').toLowerCase().includes(lowerSearch)
+    );
+  }, [jobs, searchTerm]);
 
   // Danh sách công việc sắp hết hạn (<=14 ngày)
   const expiringJobs = useMemo(() => {
-    return jobs.filter(job => {
+    return filteredJobs.filter(job => {
       const days = daysRemaining(job.expired_time);
       return days !== null && days >= 0 && days <= 14;
     }).sort((a, b) => daysRemaining(a.expired_time) - daysRemaining(b.expired_time));
-  }, [jobs]);
+  }, [filteredJobs]);
 
   function handleSwitchEmployer() {
     onNavigate('jobs');
   }
+
+  // Tìm thư mời phỏng vấn mới nhất mà ứng viên chưa phản hồi
+  const latestPendingInterview = useMemo(() => {
+    return (interviews || []).find(inv => !inv.interview_info?.candidate_response);
+  }, [interviews]);
 
   return (
     <div className="candidate-portal-layout">
@@ -122,17 +266,165 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate }) {
       <CandidateHeader 
         currentUser={currentUser} 
         onLogout={onLogout} 
-        onSwitchToEmployer={handleSwitchEmployer} 
+        onSwitchToEmployer={handleSwitchEmployer}
+        onNavigateProfile={() => onNavigate('profile')}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        interviews={interviews}
+        onSelectInterview={setSelectedInterviewForModal}
+        activeNav="jobs"
+        onNavigate={onNavigate}
+        onOpenCVBuilder={() => setIsCVBuilderOpen(true)}
       />
 
       <div className="candidate-portal-content">
-        {/* HERO BANNER */}
-        <div className="candidate-banner">
-          <img src="/images/banner.png" alt="Khám phá việc làm IT cùng AI" className="candidate-banner__img" />
+        {/* BANNER THÔNG BÁO LỊCH PHỎNG VẤN NỔI BẬT */}
+        {latestPendingInterview && (
+          <div style={{
+            margin: '20px 24px 0',
+            padding: '16px 22px',
+            background: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)',
+            border: '1px solid #bfdbfe',
+            borderRadius: '14px',
+            boxShadow: '0 4px 16px rgba(59, 130, 246, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '14px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #2563eb, #6366f1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.3rem',
+                color: '#ffffff',
+                flexShrink: 0,
+                boxShadow: '0 4px 10px rgba(99, 102, 241, 0.3)',
+              }}>
+                🎉
+              </div>
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Thông báo Lời mời Phỏng vấn Mới!
+                </div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
+                  Bạn nhận được thư mời phỏng vấn vị trí <span style={{ color: '#4338ca' }}>{latestPendingInterview.job_title}</span>
+                </div>
+                <div style={{ fontSize: '0.84rem', color: '#475569', marginTop: '3px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <span>🏢 {latestPendingInterview.department}</span>
+                  <span>⏰ {latestPendingInterview.interview_info?.scheduled_at ? new Date(latestPendingInterview.interview_info.scheduled_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Chưa định ngày'}</span>
+                  <span>📍 {latestPendingInterview.interview_info?.location}</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              className="btn btn--primary"
+              onClick={() => setSelectedInterviewForModal(latestPendingInterview)}
+              style={{
+                padding: '9px 18px',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span>Xem & Xác nhận đi phỏng vấn ➔</span>
+            </button>
+          </div>
+        )}
+
+        {/* HERO BANNER CAROUSEL */}
+        <div className="candidate-banner banner-container">
+          {/* 4 Ảnh banner tự động chuyển đổi & crossfade mượt mà */}
+          {BANNER_IMAGES.map((banner, index) => (
+            <img 
+              key={banner.id}
+              src={banner.src} 
+              alt={banner.alt} 
+              className={`candidate-banner__img ${index === currentBannerIndex ? 'candidate-banner__img--active' : ''}`} 
+            />
+          ))}
+
+          {/* Nút chuyển đổi < bên trái */}
+          <button
+            type="button"
+            className="candidate-banner__arrow candidate-banner__arrow--prev"
+            onClick={handlePrevBanner}
+            aria-label="Banner trước"
+            title="Banner trước"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+
+          {/* Nút chuyển đổi > bên phải */}
+          <button
+            type="button"
+            className="candidate-banner__arrow candidate-banner__arrow--next"
+            onClick={handleNextBanner}
+            aria-label="Banner tiếp theo"
+            title="Banner tiếp theo"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+
+          {/* Dấu chấm chỉ báo (Dots indicator) */}
+          <div className="candidate-banner__dots">
+            {BANNER_IMAGES.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className={`candidate-banner__dot ${idx === currentBannerIndex ? 'candidate-banner__dot--active' : ''}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCurrentBannerIndex(idx);
+                }}
+                aria-label={`Chuyển tới banner ${idx + 1}`}
+                title={`Banner ${idx + 1}`}
+              />
+            ))}
+          </div>
           
-          <div className="candidate-banner__actions">
-            <button className="btn-banner btn-banner--white">TẠO CV TỰ ĐỘNG CÙNG AI</button>
-            <button className="btn-banner btn-banner--yellow">ĐÁNH GIÁ CV BẰNG AI</button>
+          <div className="candidate-banner__actions" style={{ position: 'relative', zIndex: 20 }}>
+            <button 
+              type="button"
+              className="btn-banner btn-banner--white" 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsCVBuilderOpen(true);
+              }}
+              style={{ cursor: 'pointer', zIndex: 25 }}
+            >
+              ✨ TẠO CV TỰ ĐỘNG CÙNG AI
+            </button>
+            <button 
+              type="button"
+              className="btn-banner btn-banner--yellow" 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (filteredJobs.length > 0) setSelectedJobForApply(filteredJobs[0]);
+              }}
+              style={{ cursor: 'pointer', zIndex: 25 }}
+            >
+              ĐÁNH GIÁ CV BẰNG AI
+            </button>
           </div>
         </div>
 
@@ -145,7 +437,7 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate }) {
               </svg>
               VIỆC TUYỂN GẤP
             </h2>
-            <span className="candidate-section__count">{jobs.length} vị trí đang tuyển</span>
+            <span className="candidate-section__count">{filteredJobs.length} vị trí đang tuyển</span>
           </div>
 
           {loading ? (
@@ -154,7 +446,15 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate }) {
             </div>
           ) : (
             <div className="candidate-job-grid">
-              {jobs.map(job => <JobCard key={job.id} job={job} onApplyClick={setSelectedJobForApply} />)}
+              {filteredJobs.map(job => (
+                <JobCard 
+                  key={job.id} 
+                  job={job} 
+                  isApplied={appliedJobIds.has(job.id)} 
+                  onApplyClick={setSelectedJobForApply}
+                  onContactClick={(job) => onNavigate && onNavigate('contact', { job })}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -178,7 +478,16 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate }) {
               </div>
             </div>
             <div className="candidate-job-grid">
-              {expiringJobs.map(job => <JobCard key={`exp-${job.id}`} job={job} showExpiry onApplyClick={setSelectedJobForApply} />)}
+              {expiringJobs.map(job => (
+                <JobCard 
+                  key={`exp-${job.id}`} 
+                  job={job} 
+                  showExpiry 
+                  isApplied={appliedJobIds.has(job.id)} 
+                  onApplyClick={setSelectedJobForApply}
+                  onContactClick={(job) => onNavigate && onNavigate('contact', { job })}
+                />
+              ))}
             </div>
           </div>
         )}
@@ -189,8 +498,40 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate }) {
           job={selectedJobForApply} 
           currentUser={currentUser}
           onClose={() => setSelectedJobForApply(null)} 
+          onApplied={handleJobApplied}
         />
       )}
+
+      {/* MODAL THƯ MỜI PHỎNG VẤN CHO ỨNG VIÊN */}
+      {selectedInterviewForModal && (
+        <CandidateInterviewModal 
+          interview={selectedInterviewForModal}
+          onClose={() => setSelectedInterviewForModal(null)}
+          onResponded={(matchId, response, note) => {
+            setInterviews(prev => prev.map(inv => {
+              if (inv.match_id === matchId) {
+                return {
+                  ...inv,
+                  interview_info: {
+                    ...inv.interview_info,
+                    candidate_response: response,
+                    candidate_note: note,
+                    status: response,
+                  }
+                };
+              }
+              return inv;
+            }));
+          }}
+        />
+      )}
+
+      {/* MODAL TẠO CV TỰ ĐỘNG CÙNG AI */}
+      <CVBuilderModal 
+        isOpen={isCVBuilderOpen}
+        onClose={() => setIsCVBuilderOpen(false)}
+        currentUser={currentUser}
+      />
       
       {/* FOOTER */}
       <footer className="candidate-footer">
@@ -219,7 +560,7 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate }) {
           <div className="candidate-footer__col">
             <h4>Dành cho Ứng viên</h4>
             <a href="#">Tìm việc làm</a>
-            <a href="#">Tạo CV với AI</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); setIsCVBuilderOpen(true); }}>Tạo CV với AI</a>
             <a href="#">Đánh giá CV</a>
             <a href="#">Gợi ý việc làm</a>
           </div>

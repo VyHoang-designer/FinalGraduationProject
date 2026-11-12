@@ -7,10 +7,8 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
     department: '',
     location: '',
     required_experience: 0,
-    required_skills: '',
     project_keywords: '',
     jd_text: '',
-    is_active: true,
     is_active: true,
     image: '',
     started_time: '',
@@ -18,6 +16,7 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
   });
   
   const [customCriteria, setCustomCriteria] = useState([]);
+  const [requiredSkills, setRequiredSkills] = useState([]);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -29,7 +28,6 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
         department: job.department || '',
         location: job.location || '',
         required_experience: job.required_experience || 0,
-        required_skills: (job.required_skills || []).join(', '),
         project_keywords: (job.project_keywords || []).join(', '),
         jd_text: job.jd_text || '',
         image: job.image || '',
@@ -38,6 +36,12 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
         expired_time: job.expired_time ? new Date(job.expired_time).toISOString().slice(0, 16) : ''
       });
       setCustomCriteria(job.custom_criteria || []);
+      
+      const skillsInit = (job.required_skills || []).map(s => {
+        if (typeof s === 'string') return { skill: s, importance: 'core' };
+        return s;
+      });
+      setRequiredSkills(skillsInit);
     }
   }, [job]);
 
@@ -63,6 +67,20 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
     setCustomCriteria(newList);
   };
 
+  const addSkill = () => {
+    setRequiredSkills([...requiredSkills, { skill: '', importance: 'core' }]);
+  };
+
+  const removeSkill = (idx) => {
+    setRequiredSkills(requiredSkills.filter((_, i) => i !== idx));
+  };
+
+  const updateSkill = (idx, field, value) => {
+    const newList = [...requiredSkills];
+    newList[idx][field] = value;
+    setRequiredSkills(newList);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -71,7 +89,7 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
       const payload = {
         ...formData,
         required_experience: parseFloat(formData.required_experience) || 0,
-        required_skills: formData.required_skills.split(',').map(s => s.trim()).filter(s => s),
+        required_skills: requiredSkills.filter(s => s.skill.trim() !== ''),
         project_keywords: formData.project_keywords.split(',').map(s => s.trim()).filter(s => s),
         started_time: formData.started_time ? new Date(formData.started_time).toISOString() : null,
         expired_time: formData.expired_time ? new Date(formData.expired_time).toISOString() : null,
@@ -148,8 +166,13 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
 
             <div className="form-row">
               <div className="form-group">
-                <label>Hình ảnh (URL)</label>
-                <input type="text" name="image" value={formData.image} onChange={handleChange} className="form-input" placeholder="https://..." />
+                <label>Hình ảnh đại diện (Thành phố)</label>
+                <select name="image" value={formData.image} onChange={handleChange} className="form-input">
+                  <option value="">-- Chọn hình ảnh --</option>
+                  <option value="/images/hanoi.png">Hà Nội</option>
+                  <option value="/images/hochiminh.png">Hồ Chí Minh</option>
+                  <option value="/images/DaNang.png">Đà Nẵng</option>
+                </select>
               </div>
             </div>
 
@@ -165,8 +188,24 @@ export default function JDFormModal({ job, onClose, onRefresh }) {
             </div>
 
             <div className="form-group">
-              <label>Kỹ năng bắt buộc (Cách nhau bằng dấu phẩy)</label>
-              <input type="text" name="required_skills" value={formData.required_skills} onChange={handleChange} className="form-input" placeholder="python, react, docker, aws" />
+              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>Kỹ năng bắt buộc</strong>
+                <button type="button" onClick={addSkill} className="btn btn--outline" style={{ padding: '4px 8px', fontSize: '12px' }}>+ Thêm kỹ năng</button>
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                {requiredSkills.map((s, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input type="text" placeholder="Tên kỹ năng (VD: Python)" value={s.skill} onChange={(e) => updateSkill(idx, 'skill', e.target.value)} className="form-input" style={{ flex: 1 }} />
+                    <select value={s.importance} onChange={(e) => updateSkill(idx, 'importance', e.target.value)} className="form-input" style={{ width: '150px' }}>
+                      <option value="core">Core (Trọng số 3)</option>
+                      <option value="supporting">Supporting (Trọng số 2)</option>
+                      <option value="preferred">Preferred (Trọng số 1)</option>
+                    </select>
+                    <button type="button" onClick={() => removeSkill(idx)} className="btn btn--danger" style={{ padding: '8px 12px' }}>✕</button>
+                  </div>
+                ))}
+                {requiredSkills.length === 0 && <span style={{ fontSize: '13px', color: '#64748b' }}>Chưa có kỹ năng nào.</span>}
+              </div>
             </div>
 
             <div className="form-group">
