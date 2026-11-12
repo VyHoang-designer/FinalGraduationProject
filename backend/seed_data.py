@@ -19,7 +19,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import engine, SessionLocal, Base
-from models import JobDescription, CandidateCV, User, Company, MatchResult
+from models import JobDescription, CandidateCV, User, Company, MatchResult, UserGeneratedCV
 from datetime import datetime, timezone
 
 
@@ -444,6 +444,75 @@ def seed(force_recreate: bool = False):
                     }
                 )
                 db.add(match)
+                db.flush()
+
+        # ==========================================================
+        # 4b. TẠO CV & BẢN CV LƯU CHO BEN MR (mrbenhandsome2000@gmail.com)
+        # ==========================================================
+        ben_user = user_map.get("mrbenhandsome2000@gmail.com")
+        ben_cv = db.query(CandidateCV).filter(CandidateCV.email == "mrbenhandsome2000@gmail.com").first()
+        if not ben_cv:
+            ben_cv = CandidateCV(
+                full_name="ben mr",
+                email="mrbenhandsome2000@gmail.com",
+                phone="0901234567",
+                cv_text="""
+                Họ và tên: ben mr
+                Vị trí: Lập trình viên
+                Email: mrbenhandsome2000@gmail.com
+                Điện thoại: 0901234567
+                Địa điểm: TP. Hồ Chí Minh
+                Học vấn: Đại học Bách Khoa TP.HCM - Công nghệ Thông tin (2026, GPA: 3.4/4.0).
+                Mục tiêu & Tóm tắt: Chuyên viên Lập trình viên đầy nhiệt huyết với nền tảng vững chắc về JavaScript, React, Python, FastAPI. Có tư duy giải quyết vấn đề mạch lạc, khả năng làm việc độc lập và phối hợp nhóm hiệu quả.
+                Kỹ năng chuyên môn: JavaScript, React, Python, FastAPI, PostgreSQL, Git.
+                Dự án tiêu biểu:
+                - Website Tuyển dụng AI Matcher: Đảm nhiệm vai trò Full-stack & AI API, chịu trách nhiệm triển khai và hoàn thiện các module nghiệp vụ sử dụng React, FastAPI, PostgreSQL. Xây dựng và tối ưu các chức năng nòng cốt. Hệ thống vận hành trơn tru với phản hồi dưới 150ms.
+                """,
+                parsed_skills=["javascript", "react", "python", "fastapi", "postgresql", "git"],
+                project_descriptions=[
+                    "Website Tuyển dụng AI Matcher: Đảm nhiệm vai trò Full-stack & AI API sử dụng React, FastAPI, PostgreSQL"
+                ],
+                education="Đại học Bách Khoa TP.HCM - Công nghệ Thông tin",
+                experience_years=2.0,
+                user_id=ben_user.id if ben_user else None,
+            )
+            db.add(ben_cv)
+            db.flush()
+
+        if ben_user:
+            ben_gen_cv = db.query(UserGeneratedCV).filter(UserGeneratedCV.user_id == ben_user.id).first()
+            if not ben_gen_cv:
+                ben_gen_cv = UserGeneratedCV(
+                    user_id=ben_user.id,
+                    title="CV - Lập trình viên",
+                    language="vi",
+                    template_id="modern",
+                    target_job_title="Lập trình viên",
+                    final_data={
+                        "personal_info": {
+                            "full_name": "ben mr",
+                            "email": "mrbenhandsome2000@gmail.com",
+                            "phone": "0901234567",
+                            "title": "Lập trình viên",
+                            "address": "TP. Hồ Chí Minh",
+                            "education": "Đại học Bách Khoa TP.HCM - Công nghệ Thông tin (2026, GPA: 3.4/4.0)"
+                        },
+                        "professional_summary": "Chuyên viên Lập trình viên đầy nhiệt huyết với nền tảng vững chắc về JavaScript, React, Python, FastAPI. Có tư duy giải quyết vấn đề mạch lạc, khả năng làm việc độc lập và phối hợp nhóm hiệu quả, sẵn sàng tiếp cận công nghệ mới nhằm kiến tạo các sản phẩm chất lượng cao.",
+                        "skills": ["JavaScript", "React", "Python", "FastAPI", "PostgreSQL", "Git"],
+                        "polished_projects": [
+                            {
+                                "name": "Website Tuyển dụng AI Matcher",
+                                "role": "Full-stack & AI API",
+                                "bullet_points": [
+                                    "Đảm nhiệm vai trò Full-stack & AI API, chịu trách nhiệm triển khai và hoàn thiện các module nghiệp vụ sử dụng React, FastAPI, PostgreSQL.",
+                                    "Xây dựng và tối ưu các chức năng nòng cốt: Thiết kế giao diện người dùng và viết API đối sánh CV ứng viên tự động.",
+                                    "Đạt kết quả thực tế: Hệ thống vận hành trơn tru với phản hồi dưới 150ms."
+                                ]
+                            }
+                        ]
+                    }
+                )
+                db.add(ben_gen_cv)
                 db.flush()
 
         # ==========================================================

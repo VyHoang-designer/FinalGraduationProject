@@ -787,10 +787,141 @@ def create_candidate(data: CandidateCVCreate, db: Session = Depends(get_db)):
     db.refresh(candidate)
     return candidate
 
+def sync_user_generated_cv_to_candidate_cv(gen_cv: UserGeneratedCV, db: Session) -> Optional[CandidateCV]:
+    """
+    Tự động đồng bộ một bản CV tạo từ AI CV Builder sang bảng CandidateCV.
+    Giúp ứng viên:
+    1. Thấy ngay hồ sơ trong trang Cá nhân (ProfilePage) -> 'Hồ sơ / CV đã tải'
+    2. Chọn ngay hồ sơ này trong Modal 'Ứng tuyển bằng AI' trên danh sách việc làm
+    """
+    if not gen_cv or not gen_cv.user_id:
+        return None
+
+    try:
+        final_data = gen_cv.final_data or gen_cv.llm_output or {}
+        raw_input = gen_cv.raw_input if isinstance(gen_cv.raw_input, dict) else {}
+        personal_info = final_data.get("personal_info") or raw_input.get("personal_info") or {}
+
+        user_obj = db.query(User).filter(User.id == gen_cv.user_id).first()
+
+        full_name = (
+            personal_info.get("full_name")
+            or (user_obj.full_name if user_obj else None)
+            or gen_cv.title
+            or "Ứng viên"
+        )
+        email = personal_info.get("email") or (user_obj.email if user_obj else None)
+        phone = personal_info.get("phone") or (user_obj.phone if user_obj else None)
+        avatar_url = gen_cv.avatar_url or personal_info.get("avatar_url") or (user_obj.avatar_url if user_obj else None)
+
+        skills = final_data.get("skills", [])
+        if not skills:
+            skills = raw_input.get("skills", [])
+        if not isinstance(skills, list):
+            skills = [str(skills)]
+
+        summary = final_data.get("professional_summary") or raw_input.get("summary", "")
+        projects = final_data.get("polished_projects") or raw_input.get("projects", [])
+
+        project_descs = []
+        exp_bullets = []
+        if isinstance(projects, list):
+            for p in projects:
+                if isinstance(p, dict):
+                    bullets = p.get("bullet_points", [])
+                    b_text = " | ".join(bullets) if isinstance(bullets, list) else str(bullets)
+                    desc = f"{p.get('name', 'Dự án')}: {b_text}"
+                    project_descs.append(desc)
+                    exp_bullets.append(desc)
+                elif isinstance(p, str):
+                    project_descs.append(p)
+                    exp_bullets.append(p)
+
+        education_info = final_data.get("education") or raw_input.get("education")
+        if isinstance(education_info, dict):
+            edu_str = f"{education_info.get('degree', '')} - {education_info.get('school', '')}".strip(" -")
+        elif isinstance(education_info, str):
+            edu_str = education_info
+        else:
+            edu_str = None
+
+        exp_years = 1.5
+        exps = final_data.get("work_experiences") or raw_input.get("experiences", [])
+        if isinstance(exps, list) and len(exps) > 0:
+            exp_years = max(1.0, float(len(exps)))
+
+        cv_text = (
+            f"Họ tên: {full_name}\n"
+            f"Email: {email}\n"
+            f"Điện thoại: {phone}\n"
+            f"Tóm tắt: {summary}\n"
+            f"Kỹ năng: {', '.join(str(s) for s in skills)}\n"
+            f"Học vấn: {edu_str or ''}\n"
+            f"Dự án:\n" + "\n".join(exp_bullets)
+        )
+
+        cand_cv = db.query(CandidateCV).filter(CandidateCV.user_id == gen_cv.user_id).first()
+        if not cand_cv and email:
+            cand_cv = db.query(CandidateCV).filter(CandidateCV.email == email).first()
+
+        if not cand_cv:
+            cand_cv = CandidateCV(
+                user_id=gen_cv.user_id,
+                full_name=full_name,
+                email=email,
+                phone=phone,
+                cv_text=cv_text,
+                parsed_skills=skills,
+                project_descriptions=project_descs,
+                education=edu_str,
+                experience_years=exp_years,
+                avatar_url=avatar_url,
+            )
+            db.add(cand_cv)
+        else:
+            cand_cv.user_id = gen_cv.user_id
+            cand_cv.full_name = full_name
+            cand_cv.email = email or cand_cv.email
+            cand_cv.phone = phone or cand_cv.phone
+            cand_cv.cv_text = cv_text
+            cand_cv.parsed_skills = skills or cand_cv.parsed_skills
+            cand_cv.project_descriptions = project_descs or cand_cv.project_descriptions
+            if edu_str:
+                cand_cv.education = edu_str
+            if exp_years:
+                cand_cv.experience_years = exp_years
+            if avatar_url:
+                cand_cv.avatar_url = avatar_url
+
+        db.commit()
+        db.refresh(cand_cv)
+        return cand_cv
+    except Exception as e:
+        print(f"[API] Warning sync CV to CandidateCV: {e}")
+        db.rollback()
+        return None
+
+
 @app.get("/api/candidates/my-cvs/{user_id}", response_model=list[CandidateCVResponse])
 def get_my_cvs(user_id: int, db: Session = Depends(get_db)):
-    """Lấy danh sách CV của một user cụ thể."""
-    return db.query(CandidateCV).filter(CandidateCV.user_id == user_id).order_by(CandidateCV.created_at.desc()).all()
+    """Lấy danh sách CV của một user cụ thể, tự động đồng bộ từ AI CV Builder nếu có."""
+    # 1. Tự động đồng bộ các bản CV tạo bằng AI sang bảng CandidateCV
+    try:
+        gen_cvs = db.query(UserGeneratedCV).filter(UserGeneratedCV.user_id == user_id).order_by(UserGeneratedCV.updated_at.desc()).all()
+        for gen in gen_cvs:
+            sync_user_generated_cv_to_candidate_cv(gen, db)
+    except Exception as e:
+        print(f"[API] Error auto-syncing UserGeneratedCV in get_my_cvs: {e}")
+
+    # 2. Truy vấn danh sách CandidateCV theo user_id hoặc email
+    user = db.query(User).filter(User.id == user_id).first()
+    user_email = user.email if user else None
+
+    conditions = [CandidateCV.user_id == user_id]
+    if user_email:
+        conditions.append(CandidateCV.email == user_email)
+
+    return db.query(CandidateCV).filter(or_(*conditions)).order_by(CandidateCV.created_at.desc()).all()
 
 from fastapi import File, UploadFile, Form
 import shutil
@@ -1928,13 +2059,14 @@ def ai_assistant_chat(data: AIAssistantChatRequest):
 
 @app.post("/api/cv-builder/save")
 def save_user_generated_cv(req: CVSaveRequest, db: Session = Depends(get_db)):
-    """Lưu bản nháp hoặc phiên bản CV đã hoàn thành vào tài khoản người dùng."""
+    """Lưu bản nháp hoặc phiên bản CV đã hoàn thành vào tài khoản người dùng và tự động đồng bộ sang CandidateCV."""
     try:
         cv_id = req.raw_input.get("id") if isinstance(req.raw_input, dict) else None
         existing_cv = None
         if cv_id:
             existing_cv = db.query(UserGeneratedCV).filter(UserGeneratedCV.id == cv_id).first()
 
+        target_cv = None
         if existing_cv:
             existing_cv.title = req.title
             existing_cv.language = req.language
@@ -1947,7 +2079,7 @@ def save_user_generated_cv(req: CVSaveRequest, db: Session = Depends(get_db)):
             existing_cv.updated_at = datetime.utcnow()
             db.commit()
             db.refresh(existing_cv)
-            return {"success": True, "message": "Cập nhật CV thành công", "cv_id": existing_cv.id, "cv": existing_cv}
+            target_cv = existing_cv
         else:
             new_cv = UserGeneratedCV(
                 user_id=req.user_id,
@@ -1963,7 +2095,14 @@ def save_user_generated_cv(req: CVSaveRequest, db: Session = Depends(get_db)):
             db.add(new_cv)
             db.commit()
             db.refresh(new_cv)
-            return {"success": True, "message": "Lưu CV mới thành công", "cv_id": new_cv.id, "cv": new_cv}
+            target_cv = new_cv
+
+        # Tự động đồng bộ sang bảng CandidateCV
+        if target_cv and target_cv.user_id:
+            sync_user_generated_cv_to_candidate_cv(target_cv, db)
+
+        msg = "Cập nhật CV thành công" if existing_cv else "Lưu CV mới thành công"
+        return {"success": True, "message": msg, "cv_id": target_cv.id, "cv": target_cv}
     except Exception as e:
         db.rollback()
         print(f"[API] Lỗi khi lưu CV: {e}")
