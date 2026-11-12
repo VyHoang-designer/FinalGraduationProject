@@ -59,17 +59,22 @@ import hashlib
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Tạo tables và khởi tạo AI Engine khi startup."""
-    # Tạo tất cả tables nếu chưa tồn tại
-    Base.metadata.create_all(bind=engine)
-    print("[API] Database tables da san sang.")
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("[API] Database tables da san sang.", flush=True)
+    except Exception as e:
+        print(f"[API] Warning DB init: {e}", flush=True)
 
-    # Import AI Engine (trigger singleton init)
-    from ai_engine import ai_engine
-    app.state.ai_engine = ai_engine
+    try:
+        from ai_engine import ai_engine
+        app.state.ai_engine = ai_engine
+        print("[API] AI Engine da khoi tao thanh cong.", flush=True)
+    except Exception as e:
+        print(f"[API] Warning AI Engine init: {e}", flush=True)
 
     yield  # Server running
 
-    print("[API] Server đang shutdown...")
+    print("[API] Server đang shutdown...", flush=True)
 
 
 # ==============================================================================
