@@ -83,7 +83,21 @@ app = FastAPI(
 )
 
 # CORS cho Frontend
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000").split(",")
+default_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "https://vyhoang-designer.github.io",
+]
+env_cors = os.getenv("CORS_ORIGINS")
+if env_cors:
+    CORS_ORIGINS = [o.strip() for o in env_cors.split(",") if o.strip()]
+    if "https://vyhoang-designer.github.io" not in CORS_ORIGINS:
+        CORS_ORIGINS.append("https://vyhoang-designer.github.io")
+else:
+    CORS_ORIGINS = default_origins
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

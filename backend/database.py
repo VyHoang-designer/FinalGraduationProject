@@ -15,9 +15,20 @@ from dotenv import load_dotenv
 # Load .env từ thư mục backend
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:hoangvy123@localhost:5432/cv_jd_matching_db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "matching.db")
+    DATABASE_URL = f"sqlite:///{db_path}"
 
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+# Render PostgreSQL URL starts with postgres://, SQLAlchemy expects postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
