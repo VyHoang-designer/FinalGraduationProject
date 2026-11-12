@@ -1,28 +1,26 @@
 # ==============================================================================
 # FILE: backend/seed_data.py
-# MÔ TẢ: Seed script - Nạp dữ liệu demo vào PostgreSQL
+# MÔ TẢ: Script tự động tạo bảng và nạp dữ liệu demo vào Database
 # ==============================================================================
 """
-Chạy file này để tạo dữ liệu mẫu:
-  - 5 JDs (các vị trí IT phổ biến)
-  - 3 Candidates (CV mẫu với các profile khác nhau)
-
-Usage:
-  cd backend
-  python seed_data.py
+Script này sẽ:
+1. Tạo tất cả các bảng nếu chưa có (User, JobDescription, CandidateCV, MatchResult, Company)
+2. Nạp dữ liệu tài khoản demo (Nhà tuyển dụng & Ứng viên)
+3. Nạp danh sách JD thực tế (8 JDs)
+4. Nạp danh sách ứng viên mẫu (4 CVs)
+5. Nạp danh sách doanh nghiệp đối tác (6 Companies)
+6. Thiết lập kết quả matching demo (bao gồm thông báo trúng tuyển của messi cr7)
 """
 
-import os
 import sys
+import os
 
-# Thêm thư mục gốc để import
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+# Đảm bảo import được backend modules
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import engine, SessionLocal, Base
 from models import JobDescription, CandidateCV, User, Company, MatchResult
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def seed(force_recreate: bool = False):
@@ -91,192 +89,196 @@ def seed(force_recreate: bool = False):
         print(f"  ✓ Đã kiểm tra/tạo {len(user_map)} tài khoản Users demo (admin@aimatcher.vn / admin123).")
 
         # ==========================================================
-        # 2. SEED JOB DESCRIPTIONS (Nạp JD nếu chưa có)
+        # 2. SEED JOB DESCRIPTIONS (8 JDs)
         # ==========================================================
         existing_jds = db.query(JobDescription).count()
         if existing_jds == 0 or force_recreate:
             jds = [
-            JobDescription(
-                title="Backend Developer (Python/FastAPI)",
-                jd_text="""
-                Công ty ABC tuyển Backend Developer.
-                Mô tả công việc:
-                - Phát triển và bảo trì các RESTful API sử dụng Python và FastAPI.
-                - Thiết kế và tối ưu cơ sở dữ liệu PostgreSQL.
-                - Triển khai CI/CD pipeline và container hóa ứng dụng với Docker.
-                - Làm việc theo mô hình Agile/Scrum với team 5-8 người.
-                Yêu cầu:
-                - Tối thiểu 2 năm kinh nghiệm Backend development.
-                - Thành thạo Python, FastAPI hoặc Django.
-                - Kinh nghiệm với PostgreSQL, Redis.
-                - Có kinh nghiệm Docker, CI/CD là lợi thế lớn.
-                """,
-                required_skills=["python", "fastapi", "postgresql", "docker", "redis"],
-                required_experience=2.0,
-                project_keywords=["backend api", "database optimization", "deployment", "microservices"],
-                department="Engineering",
-                location="Hồ Chí Minh",
-                is_active=True,
-            ),
-            JobDescription(
-                title="Frontend Developer (React/TypeScript)",
-                jd_text="""
-                Tuyển Frontend Developer cho dự án SaaS.
-                Mô tả công việc:
-                - Phát triển giao diện người dùng với React và TypeScript.
-                - Xây dựng UI components tái sử dụng với design system.
-                - Tích hợp API RESTful và GraphQL.
-                - Tối ưu performance và responsive design.
-                Yêu cầu:
-                - 1+ năm kinh nghiệm Frontend development.
-                - Thành thạo React, JavaScript, TypeScript, HTML, CSS.
-                - Kinh nghiệm với state management (Redux/Zustand).
-                - Biết UI/UX design là lợi thế.
-                """,
-                required_skills=["react", "javascript", "typescript", "html", "css"],
-                required_experience=1.0,
-                project_keywords=["user interface", "responsive design", "SPA", "design system"],
-                department="Product",
-                location="Hà Nội",
-                is_active=True,
-            ),
-            JobDescription(
-                title="Full-stack Developer (C#/.NET + React)",
-                jd_text="""
-                Tuyển Full-stack Developer cho hệ thống ERP.
-                Mô tả công việc:
-                - Phát triển backend với ASP.NET Core và Entity Framework.
-                - Xây dựng frontend với React hoặc Angular.
-                - Quản trị SQL Server và PostgreSQL.
-                - Deploy ứng dụng lên Azure Cloud.
-                Yêu cầu:
-                - 3+ năm kinh nghiệm phát triển phần mềm.
-                - Thành thạo C#, ASP.NET Core, SQL Server.
-                - Kinh nghiệm React hoặc Angular.
-                - Có kinh nghiệm Azure/AWS là lợi thế.
-                """,
-                required_skills=["c#", "asp.net core", "sql server", "react", "azure"],
-                required_experience=3.0,
-                project_keywords=["ERP system", "enterprise application", "cloud deployment", "full-stack"],
-                department="Engineering",
-                location="Đà Nẵng",
-                is_active=True,
-            ),
-            JobDescription(
-                title="DevOps Engineer",
-                jd_text="""
-                Tuyển DevOps Engineer cho team Infrastructure.
-                Mô tả công việc:
-                - Thiết kế và quản lý CI/CD pipelines.
-                - Quản trị hệ thống Kubernetes cluster trên AWS/GCP.
-                - Monitoring, logging và alerting với Prometheus/Grafana.
-                - Infrastructure as Code với Terraform/Ansible.
-                Yêu cầu:
-                - 3+ năm kinh nghiệm DevOps/SRE.
-                - Thành thạo Docker, Kubernetes, Helm.
-                - Kinh nghiệm AWS hoặc GCP.
-                - Scripting: Python hoặc Bash.
-                """,
-                required_skills=["docker", "kubernetes", "aws", "terraform", "python"],
-                required_experience=3.0,
-                project_keywords=["CI/CD", "cloud infrastructure", "monitoring", "automation"],
-                department="Infrastructure",
-                location="Hồ Chí Minh",
-                is_active=True,
-            ),
-            JobDescription(
-                title="AI/ML Engineer (NLP Focus)",
-                jd_text="""
-                Tuyển AI Engineer chuyên về NLP cho sản phẩm AI.
-                Mô tả công việc:
-                - Nghiên cứu và phát triển mô hình NLP (text classification, NER, semantic search).
-                - Fine-tune các pre-trained models (BERT, GPT) cho tiếng Việt.
-                - Xây dựng pipeline ML end-to-end với MLOps.
-                - Deploy mô hình AI lên production với FastAPI.
-                Yêu cầu:
-                - 2+ năm kinh nghiệm ML/AI.
-                - Thành thạo Python, PyTorch hoặc TensorFlow.
-                - Kinh nghiệm NLP: spaCy, Transformers, Sentence-BERT.
-                - Có publication hoặc giải thưởng AI là lợi thế lớn.
-                """,
-                required_skills=["python", "pytorch", "tensorflow", "fastapi", "docker"],
-                required_experience=2.0,
-                project_keywords=["NLP", "machine learning", "model deployment", "text processing"],
-                department="AI Research Lab",
-                location="TP. Hồ Chí Minh",
-                image="/images/hochiminh.png",
-                is_active=True,
-            ),
-            JobDescription(
-                title="Mobile Developer (Flutter/React Native)",
-                jd_text="""
-                Tuyển Mobile Developer tham gia phát triển ứng dụng di động fintech.
-                Mô tả công việc:
-                - Phát triển và tối ưu các tính năng trên mobile app sử dụng Flutter hoặc React Native.
-                - Phối hợp với Backend team để tích hợp RESTful API và WebSocket.
-                - Quản lý state hiệu quả với Bloc, Provider hoặc Redux/Zustand.
-                - Tối ưu hóa UI/UX mượt mà, responsive trên cả iOS và Android.
-                Yêu cầu:
-                - 2+ năm kinh nghiệm lập trình Mobile (Flutter hoặc React Native).
-                - Thành thạo Dart hoặc TypeScript/JavaScript.
-                - Nắm vững kiến thức về Mobile Lifecycle, offline storage, push notifications.
-                - Có sản phẩm đã phát hành trên App Store hoặc Google Play là lợi thế lớn.
-                """,
-                required_skills=["flutter", "react native", "dart", "typescript", "restful api"],
-                required_experience=2.0,
-                project_keywords=["mobile app", "cross-platform", "state management", "fintech payment"],
-                department="MoMo (M_Service)",
-                location="TP. Hồ Chí Minh",
-                image="/images/hochiminh.png",
-                is_active=True,
-            ),
-            JobDescription(
-                title="Data Engineer (Python/Spark/Airflow)",
-                jd_text="""
-                Tuyển Data Engineer xây dựng hệ thống xử lý dữ liệu lớn.
-                Mô tả công việc:
-                - Thiết kế, xây dựng và tối ưu các pipeline ETL/ELT xử lý dữ liệu lớn từ nhiều nguồn.
-                - Lập lịch và điều phối luồng dữ liệu tự động với Apache Airflow.
-                - Xử lý streaming data thời gian thực với Apache Kafka và Spark Streaming.
-                - Thiết kế kiến trúc Data Warehouse và tối ưu truy vấn SQL phân tích.
-                Yêu cầu:
-                - 2+ năm kinh nghiệm Data Engineering / Big Data.
-                - Thành thạo Python, SQL nâng cao.
-                - Kinh nghiệm thực tế với Apache Spark, Apache Airflow hoặc Kafka.
-                - Hiểu biết về cơ sở dữ liệu quan hệ (PostgreSQL) và NoSQL.
-                """,
-                required_skills=["python", "sql", "spark", "airflow", "kafka", "postgresql"],
-                required_experience=2.0,
-                project_keywords=["data pipeline", "etl", "big data", "data warehouse", "lakehouse"],
-                department="Viettel Solutions",
-                location="Hà Nội",
-                image="/images/hanoi.png",
-                is_active=True,
-            ),
-            JobDescription(
-                title="QA Automation Engineer (Selenium/Playwright/Python)",
-                jd_text="""
-                Tuyển QA Automation Engineer phụ trách kiểm thử tự động cho hệ thống doanh nghiệp.
-                Mô tả công việc:
-                - Thiết kế, xây dựng và bảo trì Automation Test Framework cho Web UI và REST API.
-                - Viết test scripts tự động sử dụng Selenium hoặc Playwright kết hợp với Python.
-                - Tích hợp test suite tự động vào quy trình CI/CD (GitHub Actions / Jenkins / GitLab CI).
-                - Thực hiện API testing, regression testing và lập báo cáo chất lượng kiểm thử.
-                Yêu cầu:
-                - 2+ năm kinh nghiệm làm Automation Testing.
-                - Thành thạo một trong các công cụ: Selenium, Playwright, Cypress.
-                - Nắm vững ngôn ngữ lập trình Python hoặc Java/JavaScript.
-                - Thành thạo Postman/Newman cho kiểm thử API và hiểu biết về CI/CD.
-                """,
-                required_skills=["selenium", "playwright", "python", "automation test", "postman", "ci/cd"],
-                required_experience=2.0,
-                project_keywords=["automation testing", "test framework", "api testing", "ci/cd pipeline", "regression test"],
-                department="FPT Software",
-                location="Đà Nẵng",
-                image="/images/DaNang.png",
-                is_active=True,
-            ),
-        ]
+                JobDescription(
+                    title="Backend Developer (Python/FastAPI)",
+                    jd_text="""
+                    Công ty ABC tuyển Backend Developer.
+                    Mô tả công việc:
+                    - Phát triển và bảo trì các RESTful API sử dụng Python và FastAPI.
+                    - Thiết kế và tối ưu cơ sở dữ liệu PostgreSQL.
+                    - Triển khai CI/CD pipeline và container hóa ứng dụng với Docker.
+                    - Làm việc theo mô hình Agile/Scrum với team 5-8 người.
+                    Yêu cầu:
+                    - Tối thiểu 2 năm kinh nghiệm Backend development.
+                    - Thành thạo Python, FastAPI hoặc Django.
+                    - Kinh nghiệm với PostgreSQL, Redis.
+                    - Có kinh nghiệm Docker, CI/CD là lợi thế lớn.
+                    """,
+                    required_skills=["python", "fastapi", "postgresql", "docker", "redis"],
+                    required_experience=2.0,
+                    project_keywords=["backend api", "database optimization", "deployment", "microservices"],
+                    department="APEX Technology Group",
+                    location="TP. Hồ Chí Minh",
+                    image="/images/hochiminh.png",
+                    is_active=True,
+                ),
+                JobDescription(
+                    title="Frontend Developer (React/TypeScript)",
+                    jd_text="""
+                    Tuyển Frontend Developer cho dự án SaaS.
+                    Mô tả công việc:
+                    - Phát triển giao diện người dùng với React và TypeScript.
+                    - Xây dựng UI components tái sử dụng với design system.
+                    - Tích hợp API RESTful và GraphQL.
+                    - Tối ưu performance và responsive design.
+                    Yêu cầu:
+                    - 1+ năm kinh nghiệm Frontend development.
+                    - Thành thạo React, JavaScript, TypeScript, HTML, CSS.
+                    - Kinh nghiệm với state management (Redux/Zustand).
+                    - Biết UI/UX design là lợi thế.
+                    """,
+                    required_skills=["react", "javascript", "typescript", "html", "css"],
+                    required_experience=1.0,
+                    project_keywords=["user interface", "responsive design", "SPA", "design system"],
+                    department="VNG Corporation",
+                    location="Hà Nội",
+                    image="/images/hanoi.png",
+                    is_active=True,
+                ),
+                JobDescription(
+                    title="Full-stack Developer (C#/.NET + React)",
+                    jd_text="""
+                    Tuyển Full-stack Developer cho hệ thống ERP.
+                    Mô tả công việc:
+                    - Phát triển backend với ASP.NET Core và Entity Framework.
+                    - Xây dựng frontend với React hoặc Angular.
+                    - Quản trị SQL Server và PostgreSQL.
+                    - Deploy ứng dụng lên Azure Cloud.
+                    Yêu cầu:
+                    - 3+ năm kinh nghiệm phát triển phần mềm.
+                    - Thành thạo C#, ASP.NET Core, SQL Server.
+                    - Kinh nghiệm React hoặc Angular.
+                    - Có kinh nghiệm Azure/AWS là lợi thế.
+                    """,
+                    required_skills=["c#", "asp.net core", "sql server", "react", "azure"],
+                    required_experience=3.0,
+                    project_keywords=["ERP system", "enterprise application", "cloud deployment", "full-stack"],
+                    department="APEX Technology Group",
+                    location="Đà Nẵng",
+                    image="/images/DaNang.png",
+                    is_active=True,
+                ),
+                JobDescription(
+                    title="DevOps Engineer",
+                    jd_text="""
+                    Tuyển DevOps Engineer cho team Infrastructure.
+                    Mô tả công việc:
+                    - Thiết kế và quản lý CI/CD pipelines.
+                    - Quản trị hệ thống Kubernetes cluster trên AWS/GCP.
+                    - Monitoring, logging và alerting với Prometheus/Grafana.
+                    - Infrastructure as Code với Terraform/Ansible.
+                    Yêu cầu:
+                    - 3+ năm kinh nghiệm DevOps/SRE.
+                    - Thành thạo Docker, Kubernetes, Helm.
+                    - Kinh nghiệm AWS hoặc GCP.
+                    - Scripting: Python hoặc Bash.
+                    """,
+                    required_skills=["docker", "kubernetes", "aws", "terraform", "python"],
+                    required_experience=3.0,
+                    project_keywords=["CI/CD", "cloud infrastructure", "monitoring", "automation"],
+                    department="VNG Corporation",
+                    location="TP. Hồ Chí Minh",
+                    image="/images/hochiminh.png",
+                    is_active=True,
+                ),
+                JobDescription(
+                    title="AI/ML Engineer (NLP Focus)",
+                    jd_text="""
+                    Tuyển AI Engineer chuyên về NLP cho sản phẩm AI.
+                    Mô tả công việc:
+                    - Nghiên cứu và phát triển mô hình NLP (text classification, NER, semantic search).
+                    - Fine-tune các pre-trained models (BERT, GPT) cho tiếng Việt.
+                    - Xây dựng pipeline ML end-to-end với MLOps.
+                    - Deploy mô hình AI lên production với FastAPI.
+                    Yêu cầu:
+                    - 2+ năm kinh nghiệm ML/AI.
+                    - Thành thạo Python, PyTorch hoặc TensorFlow.
+                    - Kinh nghiệm NLP: spaCy, Transformers, Sentence-BERT.
+                    - Có publication hoặc giải thưởng AI là lợi thế lớn.
+                    """,
+                    required_skills=["python", "pytorch", "tensorflow", "fastapi", "docker"],
+                    required_experience=2.0,
+                    project_keywords=["NLP", "machine learning", "model deployment", "text processing"],
+                    department="AI Research Lab",
+                    location="TP. Hồ Chí Minh",
+                    image="/images/hochiminh.png",
+                    is_active=True,
+                ),
+                JobDescription(
+                    title="Mobile Developer (Flutter/React Native)",
+                    jd_text="""
+                    Tuyển Mobile Developer tham gia phát triển ứng dụng di động fintech.
+                    Mô tả công việc:
+                    - Phát triển và tối ưu các tính năng trên mobile app sử dụng Flutter hoặc React Native.
+                    - Phối hợp với Backend team để tích hợp RESTful API và WebSocket.
+                    - Quản lý state hiệu quả với Bloc, Provider hoặc Redux/Zustand.
+                    - Tối ưu hóa UI/UX mượt mà, responsive trên cả iOS và Android.
+                    Yêu cầu:
+                    - 2+ năm kinh nghiệm lập trình Mobile (Flutter hoặc React Native).
+                    - Thành thạo Dart hoặc TypeScript/JavaScript.
+                    - Nắm vững kiến thức về Mobile Lifecycle, offline storage, push notifications.
+                    - Có sản phẩm đã phát hành trên App Store hoặc Google Play là lợi thế lớn.
+                    """,
+                    required_skills=["flutter", "react native", "dart", "typescript", "restful api"],
+                    required_experience=2.0,
+                    project_keywords=["mobile app", "cross-platform", "state management", "fintech payment"],
+                    department="MoMo (M_Service)",
+                    location="TP. Hồ Chí Minh",
+                    image="/images/hochiminh.png",
+                    is_active=True,
+                ),
+                JobDescription(
+                    title="Data Engineer (Python/Spark/Airflow)",
+                    jd_text="""
+                    Tuyển Data Engineer xây dựng hệ thống xử lý dữ liệu lớn.
+                    Mô tả công việc:
+                    - Thiết kế, xây dựng và tối ưu các pipeline ETL/ELT xử lý dữ liệu lớn từ nhiều nguồn.
+                    - Lập lịch và điều phối luồng dữ liệu tự động với Apache Airflow.
+                    - Xử lý streaming data thời gian thực với Apache Kafka và Spark Streaming.
+                    - Thiết kế kiến trúc Data Warehouse và tối ưu truy vấn SQL phân tích.
+                    Yêu cầu:
+                    - 2+ năm kinh nghiệm Data Engineering / Big Data.
+                    - Thành thạo Python, SQL nâng cao.
+                    - Kinh nghiệm thực tế với Apache Spark, Apache Airflow hoặc Kafka.
+                    - Hiểu biết về cơ sở dữ liệu quan hệ (PostgreSQL) và NoSQL.
+                    """,
+                    required_skills=["python", "sql", "spark", "airflow", "kafka", "postgresql"],
+                    required_experience=2.0,
+                    project_keywords=["data pipeline", "etl", "big data", "data warehouse", "lakehouse"],
+                    department="Viettel Solutions",
+                    location="Hà Nội",
+                    image="/images/hanoi.png",
+                    is_active=True,
+                ),
+                JobDescription(
+                    title="QA Automation Engineer (Selenium/Playwright/Python)",
+                    jd_text="""
+                    Tuyển QA Automation Engineer phụ trách kiểm thử tự động cho hệ thống doanh nghiệp.
+                    Mô tả công việc:
+                    - Thiết kế, xây dựng và bảo trì Automation Test Framework cho Web UI và REST API.
+                    - Viết test scripts tự động sử dụng Selenium hoặc Playwright kết hợp với Python.
+                    - Tích hợp test suite tự động vào quy trình CI/CD (GitHub Actions / Jenkins / GitLab CI).
+                    - Thực hiện API testing, regression testing và lập báo cáo chất lượng kiểm thử.
+                    Yêu cầu:
+                    - 2+ năm kinh nghiệm làm Automation Testing.
+                    - Thành thạo một trong các công cụ: Selenium, Playwright, Cypress.
+                    - Nắm vững ngôn ngữ lập trình Python hoặc Java/JavaScript.
+                    - Thành thạo Postman/Newman cho kiểm thử API và hiểu biết về CI/CD.
+                    """,
+                    required_skills=["selenium", "playwright", "python", "automation test", "postman", "ci/cd"],
+                    required_experience=2.0,
+                    project_keywords=["automation testing", "test framework", "api testing", "ci/cd pipeline", "regression test"],
+                    department="FPT Software",
+                    location="Đà Nẵng",
+                    image="/images/DaNang.png",
+                    is_active=True,
+                ),
+            ]
 
             for jd in jds:
                 db.add(jd)
@@ -284,7 +286,7 @@ def seed(force_recreate: bool = False):
             print(f"  ✓ Đã tạo {len(jds)} JDs.")
 
         # ==========================================================
-        # 3. SEED CANDIDATES
+        # 3. SEED CANDIDATES (4 Candidates)
         # ==========================================================
         existing_cvs = db.query(CandidateCV).count()
         if existing_cvs == 0 or force_recreate:
@@ -429,7 +431,7 @@ def seed(force_recreate: bool = False):
                     match_score=85.0,
                     match_level="Rất phù hợp",
                     status="hired",
-                    applied_at=datetime.utcnow(),
+                    applied_at=datetime.now(timezone.utc),
                     interview_info={
                         "type": "hired",
                         "status": "hired",
@@ -445,46 +447,119 @@ def seed(force_recreate: bool = False):
                 db.flush()
 
         # ==========================================================
-        # 5. SEED COMPANIES DEMO
+        # 5. SEED COMPANIES DEMO (6 Companies chuẩn theo models.py)
         # ==========================================================
         existing_companies = db.query(Company).count()
         if existing_companies == 0 or force_recreate:
             demo_companies = [
                 Company(
-                    name="AI Research Lab",
-                    industry="Trí tuệ nhân tạo & Công nghệ",
+                    name="APEX Technology Group",
+                    logo="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=256&h=256&fit=crop",
+                    cover_image="https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=400&fit=crop",
+                    tagline="Tiên phong Đổi mới Sáng tạo & Nền tảng AI Thông minh",
+                    industry="Trí tuệ Nhân tạo & Phần mềm",
                     location="TP. Hồ Chí Minh",
-                    size="50-150 nhân viên",
-                    description="Phòng thí nghiệm nghiên cứu và phát triển các sản phẩm Trí tuệ Nhân tạo, NLP và Computer Vision hàng đầu.",
-                    email="contact@airesearch.vn",
-                    phone="028 1234 5678",
-                    website="https://airesearch.vn",
-                    cover_image="/images/hochiminh.png",
-                    is_partner=True,
+                    company_size="500 - 1000 nhân viên",
+                    website="https://apex-tech.com",
+                    description="APEX Technology Group là tập đoàn công nghệ tiên phong tại Đông Nam Á, tập trung nghiên cứu và ứng dụng Trí tuệ Nhân tạo (Generative AI, NLP, Computer Vision) vào các bài toán chuyển đổi số doanh nghiệp quy mô lớn.",
+                    benefits=[
+                        "Lương thưởng cạnh tranh (tháng 13, 14 theo hiệu suất)",
+                        "Cấp MacBook Pro M3 mới 100%",
+                        "Làm việc Hybrid linh hoạt 2 ngày/tuần",
+                        "Bảo hiểm sức khỏe quốc tế cao cấp PTI",
+                        "Du lịch nghỉ dưỡng 5 sao định kỳ hàng năm",
+                    ],
+                    rating=4.9,
                 ),
                 Company(
-                    name="Viettel Solutions",
-                    industry="Viễn thông & Giải pháp số",
-                    location="Hà Nội",
-                    size="1000+ nhân viên",
-                    description="Tổng công ty Giải pháp Doanh nghiệp Viettel — Tiên phong chuyển đổi số quốc gia.",
-                    email="tuyendung@viettelsolutions.vn",
-                    phone="024 6266 0000",
-                    website="https://viettelsolutions.vn",
-                    cover_image="/images/hanoi.png",
-                    is_partner=True,
+                    name="AI Research Lab",
+                    logo="https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=256&h=256&fit=crop",
+                    cover_image="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=400&fit=crop",
+                    tagline="Trung tâm Nghiên cứu & Ứng dụng Trí tuệ Nhân tạo Đỉnh cao",
+                    industry="Trí tuệ Nhân tạo & Deep Learning",
+                    location="TP. Hồ Chí Minh",
+                    company_size="50 - 100 nhân viên",
+                    website="https://ai-research.vn",
+                    description="AI Research Lab tập hợp các nhà khoa học và kỹ sư AI xuất sắc, chuyên sâu vào xử lý ngôn ngữ tự nhiên (NLP) cho tiếng Việt, mô hình ngôn ngữ lớn (LLM) và các hệ thống matching thông minh.",
+                    benefits=[
+                        "Hệ thống GPU Cluster A100/H100 điện toán đám mây",
+                        "Tài trợ công bố bài báo khoa học quốc tế (NeurIPS, ACL)",
+                        "Lương thưởng theo chuẩn nhân tài AI quốc tế",
+                        "Môi trường học thuật tự do và sáng tạo cao",
+                    ],
+                    rating=4.9,
+                ),
+                Company(
+                    name="VNG Corporation",
+                    logo="https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=256&h=256&fit=crop",
+                    cover_image="https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1200&h=400&fit=crop",
+                    tagline="Đón nhận Thách thức & Kiến tạo Tương lai Số",
+                    industry="Internet, Game & Điện toán Đám mây",
+                    location="TP. Hồ Chí Minh (VNG Campus, Quận 7)",
+                    company_size="1000+ nhân viên",
+                    website="https://vng.com.vn",
+                    description="VNG là kỳ lân công nghệ đầu tiên tại Việt Nam với các sản phẩm hàng chục triệu người dùng như Zalo, ZaloPay, VNG Cloud và các tựa game nổi tiếng toàn cầu.",
+                    benefits=[
+                        "Khuôn viên VNG Campus chuẩn quốc tế đẳng cấp",
+                        "Phòng Gym, hồ bơi, canteen ăn sáng & trưa miễn phí",
+                        "Chế độ thưởng ESOP và hiệu quả công việc hấp dẫn",
+                        "Cơ hội đào tạo công nghệ hàng đầu khu vực",
+                    ],
+                    rating=4.8,
                 ),
                 Company(
                     name="FPT Software",
-                    industry="Xuất khẩu phần mềm",
-                    location="Đà Nẵng",
-                    size="1000+ nhân viên",
-                    description="Công ty phần mềm hàng đầu Việt Nam và khu vực, chuyên cung cấp dịch vụ CNTT toàn cầu.",
-                    email="recruitment@fsoft.com.vn",
-                    phone="0236 399 9999",
-                    website="https://fpt-software.com",
-                    cover_image="/images/DaNang.png",
-                    is_partner=True,
+                    logo="https://images.unsplash.com/photo-1572021335469-31706a17aaef?w=256&h=256&fit=crop",
+                    cover_image="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=400&fit=crop",
+                    tagline="Cùng Bạn Đi Đến Thành Công Toàn Cầu",
+                    industry="Xuất khẩu Phần mềm & Chuyển đổi số",
+                    location="TP. Hồ Chí Minh (F-Town, TP. Thủ Đức)",
+                    company_size="1000+ nhân viên",
+                    website="https://fptsoftware.com",
+                    description="FPT Software là công ty phần mềm lớn nhất Việt Nam với hơn 30,000 kỹ sư công nghệ trên toàn cầu, phục vụ hàng trăm khách hàng Fortune 500 tại Mỹ, Nhật Bản, châu Âu.",
+                    benefits=[
+                        "Cơ hội Onsite làm việc dài hạn tại Nhật Bản, Mỹ, EU",
+                        "Xe buýt đưa đón nhân viên miễn phí tại các campus",
+                        "Gói bảo hiểm FPT Care cho nhân viên và người thân",
+                        "Hỗ trợ 100% lệ phí thi chứng chỉ quốc tế AWS, Azure, GCP",
+                    ],
+                    rating=4.7,
+                ),
+                Company(
+                    name="MoMo (M_Service)",
+                    logo="https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=256&h=256&fit=crop",
+                    cover_image="https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1200&h=400&fit=crop",
+                    tagline="Siêu Ứng dụng Tài chính cho Hàng triệu Người Việt",
+                    industry="Fintech & Tài chính Số",
+                    location="TP. Hồ Chí Minh",
+                    company_size="500 - 1000 nhân viên",
+                    website="https://momo.vn",
+                    description="MoMo là siêu ứng dụng thanh toán và tài chính số hàng đầu tại Việt Nam, phục vụ hơn 31 triệu người dùng với nền tảng công nghệ chịu tải cực lớn và bảo mật cao.",
+                    benefits=[
+                        "Chính sách thưởng hiệu quả và thưởng dự án hàng quý",
+                        "Gói bảo hiểm chăm sóc sức khỏe toàn diện cao cấp",
+                        "Trợ cấp thiết bị công nghệ làm việc hiện đại",
+                        "Môi trường văn hóa cởi mở, tôn trọng sáng kiến cá nhân",
+                    ],
+                    rating=4.8,
+                ),
+                Company(
+                    name="Viettel Solutions",
+                    logo="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=256&h=256&fit=crop",
+                    cover_image="https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&h=400&fit=crop",
+                    tagline="Tiên phong Kiến tạo Xã hội Số",
+                    industry="Viễn thông & Dịch vụ Số",
+                    location="Hà Nội",
+                    company_size="1000+ nhân viên",
+                    website="https://viettel.vn",
+                    description="Viettel Solutions là đơn vị dẫn đầu trong việc cung cấp các giải pháp công nghệ thông tin, Cloud, IoT, Big Data cho các cơ quan chính phủ và doanh nghiệp hàng đầu.",
+                    benefits=[
+                        "Thu nhập thuộc top đầu ngành viễn thông & công nghệ số",
+                        "Phúc lợi vững chắc từ Tập đoàn Công nghiệp - Viễn thông Quân đội",
+                        "Tham gia trực tiếp các dự án công nghệ mang tầm vóc quốc gia",
+                        "Môi trường kỷ luật, chuyên nghiệp và đầy thử thách lớn",
+                    ],
+                    rating=4.7,
                 ),
             ]
             for comp in demo_companies:
@@ -493,9 +568,7 @@ def seed(force_recreate: bool = False):
             print("  ✓ Đã tạo danh sách Companies demo.")
 
         db.commit()
-        print("\n✓ Seed data hoàn tất!")
-        print(f"  - {len(jds)} Job Descriptions")
-        print(f"  - {len(candidates)} Candidates")
+        print("\n✓ Seed data hoàn tất thành công!")
 
     except Exception as e:
         db.rollback()

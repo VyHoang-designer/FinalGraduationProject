@@ -147,11 +147,11 @@ def health_check():
 
 
 @app.api_route("/api/admin/seed", methods=["GET", "POST"])
-def trigger_seed():
+def trigger_seed(force: bool = False):
     """Endpoint thủ công nạp lại dữ liệu demo vào database nếu cần."""
     try:
         from seed_data import seed
-        seed()
+        seed(force_recreate=force)
         return {"status": "ok", "message": "Nạp dữ liệu mẫu thành công"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
