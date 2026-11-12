@@ -3,7 +3,41 @@
 // MÔ TẢ: API Service Layer - Giao tiếp với FastAPI Backend
 // ==============================================================================
 
-const API_BASE = 'http://localhost:8000/api';
+// Cấu hình URL Backend:
+// - Khi chạy trên máy cá nhân (localhost / 127.0.0.1) -> Dùng http://localhost:8000
+// - Khi deploy lên GitHub Pages / máy khác -> Dùng URL server online (Render, Railway, ngrok...)
+const DEFAULT_ONLINE_BACKEND = 'https://finalgraduationproject.onrender.com';
+
+const getBackendOrigin = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocalhost) {
+      return 'http://localhost:8000';
+    }
+    const customUrl = localStorage.getItem('aimatcher_backend_url');
+    if (customUrl) return customUrl;
+  }
+  return DEFAULT_ONLINE_BACKEND;
+};
+
+const BACKEND_ORIGIN = getBackendOrigin().replace(/\/+$/, '');
+const API_BASE = `${BACKEND_ORIGIN}/api`;
+
+export function setCustomBackendUrl(url) {
+  if (url) {
+    localStorage.setItem('aimatcher_backend_url', url.trim().replace(/\/+$/, ''));
+  } else {
+    localStorage.removeItem('aimatcher_backend_url');
+  }
+  window.location.reload();
+}
+
+export function getCurrentBackendUrl() {
+  return BACKEND_ORIGIN;
+}
 
 /**
  * Trả về đường dẫn đầy đủ của avatar (hỗ trợ static backend, base64, external URL)
