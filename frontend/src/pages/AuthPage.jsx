@@ -98,7 +98,8 @@ export default function AuthPage({ onNavigate, onLogin }) {
       } else if (err.code === 'auth/operation-not-allowed') {
         setError('Nhà cung cấp Google chưa được BẬT trong Firebase Console (Vào mục Authentication > Sign-in method > bật Google).');
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError('Tên miền (Domain) chưa được cấp phép trong Firebase Console (Vào Authentication > Settings > Authorized domains thêm localhost).');
+        const curDomain = window.location.hostname || 'tên miền hiện tại';
+        setError(`Tên miền "${curDomain}" chưa được cấp phép trong Firebase Console (Vào Authentication > Settings > Authorized domains > Thêm "${curDomain}").`);
       } else if (err.code === 'auth/api-key-not-valid') {
         setError('API Key Firebase không hợp lệ.');
       } else {
