@@ -157,6 +157,205 @@ def trigger_seed():
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/api/admin/sync-database")
+def sync_database(data: Dict[str, Any], db: Session = Depends(get_db)):
+    """
+    Nhận toàn bộ dữ liệu từ database cục bộ (Local PostgreSQL) và ghi đè đồng bộ lên Render.
+    """
+    from models import User, Company, JobDescription, CandidateCV, MatchResult, JobInquiry, UserGeneratedCV
+
+    def parse_dt(v):
+        if not v:
+            return None
+        if isinstance(v, datetime):
+            return v
+        try:
+            return datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        except Exception:
+            return None
+
+    tables_data = data.get("tables", {})
+    summary = {}
+
+    # Xóa các bảng phụ thuộc trước để tránh lỗi Foreign Key
+    db.query(MatchResult).delete()
+    db.query(JobInquiry).delete()
+    db.query(UserGeneratedCV).delete()
+    db.query(CandidateCV).delete()
+    db.query(JobDescription).delete()
+    db.query(Company).delete()
+    db.query(User).delete()
+    db.commit()
+
+    # 1. USERS
+    if "users" in tables_data:
+        u_count = 0
+        for r in tables_data["users"]:
+            u = User(
+                id=r.get("id"),
+                full_name=r.get("full_name"),
+                email=r.get("email"),
+                password_hash=r.get("password_hash"),
+                role=r.get("role"),
+                phone=r.get("phone"),
+                avatar_url=r.get("avatar_url"),
+                firebase_uid=r.get("firebase_uid"),
+                is_active=r.get("is_active", True),
+                created_at=parse_dt(r.get("created_at")) or datetime.utcnow(),
+            )
+            db.add(u)
+            u_count += 1
+        db.commit()
+        summary["users"] = u_count
+
+    # 2. COMPANIES
+    if "companies" in tables_data:
+        c_count = 0
+        for r in tables_data["companies"]:
+            comp = Company(
+                id=r.get("id"),
+                name=r.get("name"),
+                industry=r.get("industry"),
+                location=r.get("location"),
+                size=r.get("size"),
+                description=r.get("description"),
+                email=r.get("email"),
+                phone=r.get("phone"),
+                website=r.get("website"),
+                cover_image=r.get("cover_image"),
+                is_partner=r.get("is_partner", False),
+                popular_benefits=r.get("popular_benefits", []),
+                created_at=parse_dt(r.get("created_at")) or datetime.utcnow(),
+            )
+            db.add(comp)
+            c_count += 1
+        db.commit()
+        summary["companies"] = c_count
+
+    # 3. JOB DESCRIPTIONS
+    if "job_descriptions" in tables_data:
+        jd_count = 0
+        for r in tables_data["job_descriptions"]:
+            jd = JobDescription(
+                id=r.get("id"),
+                title=r.get("title"),
+                jd_text=r.get("jd_text"),
+                required_skills=r.get("required_skills", []),
+                required_experience=r.get("required_experience", 0.0),
+                project_keywords=r.get("project_keywords", []),
+                is_active=r.get("is_active", True),
+                department=r.get("department"),
+                location=r.get("location"),
+                image=r.get("image"),
+                started_time=parse_dt(r.get("started_time")),
+                expired_time=parse_dt(r.get("expired_time")),
+                custom_criteria=r.get("custom_criteria", []),
+                created_at=parse_dt(r.get("created_at")) or datetime.utcnow(),
+            )
+            db.add(jd)
+            jd_count += 1
+        db.commit()
+        summary["job_descriptions"] = jd_count
+
+    # 4. CANDIDATES CV
+    if "candidates_cv" in tables_data:
+        cv_count = 0
+        for r in tables_data["candidates_cv"]:
+            cv = CandidateCV(
+                id=r.get("id"),
+                full_name=r.get("full_name"),
+                email=r.get("email"),
+                phone=r.get("phone"),
+                cv_text=r.get("cv_text"),
+                parsed_skills=r.get("parsed_skills", []),
+                project_descriptions=r.get("project_descriptions", []),
+                education=r.get("education"),
+                experience_years=r.get("experience_years", 0.0),
+                avatar_url=r.get("avatar_url"),
+                user_id=r.get("user_id"),
+                created_at=parse_dt(r.get("created_at")) or datetime.utcnow(),
+            )
+            db.add(cv)
+            cv_count += 1
+        db.commit()
+        summary["candidates_cv"] = cv_count
+
+    # 5. MATCH RESULTS
+    if "match_results" in tables_data:
+        mr_count = 0
+        for r in tables_data["match_results"]:
+            mr = MatchResult(
+                id=r.get("id"),
+                cv_id=r.get("cv_id"),
+                jd_id=r.get("jd_id"),
+                match_score=r.get("match_score"),
+                match_level=r.get("match_level"),
+                feature_details=r.get("feature_details", {}),
+                custom_criteria_results=r.get("custom_criteria_results", []),
+                skill_details=r.get("skill_details", []),
+                status=r.get("status"),
+                applied_at=parse_dt(r.get("applied_at")),
+                interview_info=r.get("interview_info"),
+                created_at=parse_dt(r.get("created_at")) or datetime.utcnow(),
+            )
+            db.add(mr)
+            mr_count += 1
+        db.commit()
+        summary["match_results"] = mr_count
+
+    # 6. JOB INQUIRIES
+    if "job_inquiries" in tables_data:
+        inq_count = 0
+        for r in tables_data["job_inquiries"]:
+            inq = JobInquiry(
+                id=r.get("id"),
+                user_id=r.get("user_id"),
+                jd_id=r.get("jd_id"),
+                sender_name=r.get("sender_name"),
+                sender_email=r.get("sender_email"),
+                sender_phone=r.get("sender_phone"),
+                subject=r.get("subject"),
+                message=r.get("message"),
+                status=r.get("status", "unread"),
+                reply_message=r.get("reply_message"),
+                created_at=parse_dt(r.get("created_at")) or datetime.utcnow(),
+            )
+            db.add(inq)
+            inq_count += 1
+        db.commit()
+        summary["job_inquiries"] = inq_count
+
+    # 7. USER GENERATED CVS
+    if "user_generated_cvs" in tables_data:
+        ug_count = 0
+        for r in tables_data["user_generated_cvs"]:
+            ug = UserGeneratedCV(
+                id=r.get("id"),
+                user_id=r.get("user_id"),
+                title=r.get("title", "Bản CV Mới"),
+                language=r.get("language", "vi"),
+                template_id=r.get("template_id", "modern"),
+                target_job_title=r.get("target_job_title"),
+                raw_input=r.get("raw_input", {}),
+                llm_output=r.get("llm_output", {}),
+                final_data=r.get("final_data", {}),
+                avatar_url=r.get("avatar_url"),
+                pdf_url=r.get("pdf_url"),
+                created_at=parse_dt(r.get("created_at")) or datetime.utcnow(),
+                updated_at=parse_dt(r.get("updated_at")) or datetime.utcnow(),
+            )
+            db.add(ug)
+            ug_count += 1
+        db.commit()
+        summary["user_generated_cvs"] = ug_count
+
+    return {
+        "success": True,
+        "message": "Đã đồng bộ toàn bộ dữ liệu từ local sang Render thành công!",
+        "summary": summary,
+    }
+
+
 # ==============================================================================
 # AUTH ENDPOINTS (Đăng ký / Đăng nhập)
 # ==============================================================================
