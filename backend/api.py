@@ -65,6 +65,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[API] Warning DB init: {e}", flush=True)
 
+    # Tự động nạp dữ liệu mẫu (JDs, Users, Candidates) nếu database đang trống
+    try:
+        from database import SessionLocal, JobDescription
+        with SessionLocal() as db:
+            job_count = db.query(JobDescription).count()
+            if job_count == 0:
+                print("[API] Database đang trống. Đang tự động nạp dữ liệu mẫu...", flush=True)
+                from seed_data import seed
+                seed()
+                print("[API] Đã nạp dữ liệu mẫu thành công!", flush=True)
+    except Exception as e:
+        print(f"[API] Warning auto-seed: {e}", flush=True)
+
     try:
         from ai_engine import ai_engine
         app.state.ai_engine = ai_engine
@@ -129,6 +142,17 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "message": "AI CV-JD Matching API is running"}
+
+
+@app.api_route("/api/admin/seed", methods=["GET", "POST"])
+def trigger_seed():
+    """Endpoint thủ công nạp lại dữ liệu demo vào database nếu cần."""
+    try:
+        from seed_data import seed
+        seed()
+        return {"status": "ok", "message": "Nạp dữ liệu mẫu thành công"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # ==============================================================================
