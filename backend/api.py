@@ -119,6 +119,8 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 # ==============================================================================
 # HEALTH CHECK
 # ==============================================================================
+@app.get("/")
+@app.get("/healthz")
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "message": "AI CV-JD Matching API is running"}
