@@ -8,7 +8,7 @@ import CandidateHeader from '../components/CandidateHeader';
 import ApplyAIModal from '../components/ApplyAIModal';
 import CandidateInterviewModal from '../components/CandidateInterviewModal';
 import CVBuilderModal from '../components/CVBuilderModal';
-import { fetchJobs, fetchAppliedJobs, fetchCandidateInterviews } from '../services/api';
+import { fetchJobs, fetchAppliedJobs, fetchCandidateInterviews, getAssetUrl } from '../services/api';
 
 // Helper: tính số ngày còn lại
 function daysRemaining(expiredTime) {
@@ -20,10 +20,10 @@ function daysRemaining(expiredTime) {
 }
 
 const BANNER_IMAGES = [
-  { id: 1, src: '/images/banner.png', alt: 'Khám phá việc làm IT cùng AI' },
-  { id: 2, src: '/images/banner2.png', alt: 'Cơ hội nghề nghiệp công nghệ hấp dẫn' },
-  { id: 3, src: '/images/banner3.png', alt: 'Đánh giá CV chuẩn ATS với AI' },
-  { id: 4, src: '/images/banner4.png', alt: 'Kết nối việc làm IT hàng đầu' },
+  { id: 1, src: getAssetUrl('/images/banner.png'), alt: 'Khám phá việc làm IT cùng AI' },
+  { id: 2, src: getAssetUrl('/images/banner2.png'), alt: 'Cơ hội nghề nghiệp công nghệ hấp dẫn' },
+  { id: 3, src: getAssetUrl('/images/banner3.png'), alt: 'Đánh giá CV chuẩn ATS với AI' },
+  { id: 4, src: getAssetUrl('/images/banner4.png'), alt: 'Kết nối việc làm IT hàng đầu' },
 ];
 
 function JobCard({ job, showExpiry = false, onApplyClick, onContactClick, isApplied = false }) {
@@ -56,8 +56,12 @@ function JobCard({ job, showExpiry = false, onApplyClick, onContactClick, isAppl
 
       <div className="candidate-job-card__logo">
         <img 
-          src={job.image || `https://ui-avatars.com/api/?name=${job.department || 'IT'}&background=random&size=128`} 
+          src={getAssetUrl(job.image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(job.department || 'IT')}&background=0284c7&color=fff&size=128`} 
           alt="Company Logo" 
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(job.department || 'IT')}&background=0284c7&color=fff&size=128`;
+          }}
         />
       </div>
 
@@ -353,6 +357,11 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate, aut
               src={banner.src} 
               alt={banner.alt} 
               className={`candidate-banner__img ${index === currentBannerIndex ? 'candidate-banner__img--active' : ''}`} 
+              onError={(e) => {
+                if (!e.currentTarget.src.includes('/image/banner')) {
+                  e.currentTarget.src = e.currentTarget.src.replace('/images/banner', '/image/banner');
+                }
+              }}
             />
           ))}
 
@@ -538,7 +547,7 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate, aut
         <div className="candidate-footer__inner">
           <div className="candidate-footer__col">
             <div className="candidate-footer__brand">
-              <img src="/images/logo.png" alt="AI Matcher Logo" />
+              <img src={getAssetUrl('/images/logo.png')} alt="AI Matcher Logo" />
               <span>AI MATCHER</span>
             </div>
             <p className="candidate-footer__desc">

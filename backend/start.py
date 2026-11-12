@@ -17,3 +17,4 @@ if __name__ == "__main__":
     print("=" * 60, flush=True)
 
     uvicorn.run("api:app", host=host, port=port, log_level="info")
+

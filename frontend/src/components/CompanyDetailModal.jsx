@@ -7,7 +7,7 @@
 // ==============================================================================
 
 import { useState, useEffect } from 'react';
-import { fetchCompanyDetail } from '../services/api';
+import { fetchCompanyDetail, getAssetUrl } from '../services/api';
 
 export default function CompanyDetailModal({ companyId, initialCompany, onClose, onApplyJob }) {
   const [company, setCompany] = useState(initialCompany || null);
@@ -67,7 +67,7 @@ export default function CompanyDetailModal({ companyId, initialCompany, onClose,
         {/* COVER BANNER */}
         <div style={{ position: 'relative', height: '170px', background: '#0f172a', overflow: 'hidden' }}>
           <img 
-            src={company.cover_image || "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=400&fit=crop"} 
+            src={getAssetUrl(company.cover_image) || "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=400&fit=crop"} 
             alt="Company Cover"
             style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.85 }}
           />

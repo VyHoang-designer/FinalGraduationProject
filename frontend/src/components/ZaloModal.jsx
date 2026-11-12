@@ -9,6 +9,7 @@
 // ==============================================================================
 
 import { useState } from 'react';
+import { getAssetUrl } from '../services/api';
 
 export default function ZaloModal({ onClose }) {
   const [copied, setCopied] = useState(false);
@@ -115,7 +116,7 @@ export default function ZaloModal({ onClose }) {
                 {/* Logo Avatar */}
                 <div style={{ position: 'relative', width: '76px', height: '76px', flexShrink: 0 }}>
                   <img
-                    src="/images/logo.png"
+                    src={getAssetUrl('/images/logo.png')}
                     alt="AI Matcher Logo"
                     style={{
                       width: '100%',

@@ -6,7 +6,7 @@
 // ==============================================================================
 
 import { useState, useEffect } from 'react';
-import { loginUser, registerUser, loginWithGoogle } from '../services/api';
+import { loginUser, registerUser, loginWithGoogle, getAssetUrl } from '../services/api';
 import { signInWithGoogle } from '../services/firebase';
 
 const ROLES = [
@@ -116,7 +116,7 @@ export default function AuthPage({ onNavigate, onLogin }) {
   return (
     <div className="auth-page">
       {/* ========== CỘT TRÁI: BRANDING ========== */}
-      <div className="auth-branding">
+      <div className="auth-branding" style={{ backgroundImage: `url(${getAssetUrl('/images/background.png')})` }}>
         <div className="auth-branding__overlay" />
         <div className="auth-branding__content">
           <div className="auth-glass-card">

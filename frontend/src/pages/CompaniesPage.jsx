@@ -11,7 +11,7 @@ import CandidateHeader from '../components/CandidateHeader';
 import CompanyDetailModal from '../components/CompanyDetailModal';
 import ApplyAIModal from '../components/ApplyAIModal';
 import CandidateInterviewModal from '../components/CandidateInterviewModal';
-import { fetchCompanies, fetchCandidateInterviews } from '../services/api';
+import { fetchCompanies, fetchCandidateInterviews, getAssetUrl } from '../services/api';
 
 const INDUSTRY_FILTERS = [
   { key: 'all', label: 'Tất cả lĩnh vực' },
@@ -263,7 +263,7 @@ export default function CompaniesPage({ currentUser, onLogout, onNavigate }) {
                   {/* Card Cover Banner */}
                   <div style={{ height: '90px', background: '#1e293b', position: 'relative', overflow: 'hidden' }}>
                     <img 
-                      src={c.cover_image || "https://images.unsplash.com/photo-1497366216548-37526070297c?w=600&h=200&fit=crop"} 
+                      src={getAssetUrl(c.cover_image) || "https://images.unsplash.com/photo-1497366216548-37526070297c?w=600&h=200&fit=crop"} 
                       alt={c.name}
                       style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.8 }}
                     />
@@ -372,7 +372,7 @@ export default function CompaniesPage({ currentUser, onLogout, onNavigate }) {
         <div className="candidate-footer__inner">
           <div className="candidate-footer__col">
             <div className="candidate-footer__brand">
-              <img src="/images/logo.png" alt="AI Matcher Logo" />
+              <img src={getAssetUrl('/images/logo.png')} alt="AI Matcher Logo" />
               <span>AI MATCHER</span>
             </div>
             <p className="candidate-footer__desc">

@@ -15,7 +15,8 @@ import {
   fetchCompanyDetail, 
   updateCompany, 
   createCompany, 
-  deleteCompany 
+  deleteCompany,
+  getAssetUrl
 } from '../services/api';
 
 const POPULAR_BENEFIT_SUGGESTIONS = [
@@ -421,7 +422,7 @@ export default function CompanyManagementPage({ onNavigate, currentUser, globalS
             {/* Cover Banner */}
             <div style={{ height: '140px', background: '#1e293b', position: 'relative', overflow: 'hidden' }}>
               <img 
-                src={formData.cover_image || "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=400&fit=crop"} 
+                src={getAssetUrl(formData.cover_image) || "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=400&fit=crop"} 
                 alt="Company Cover"
                 style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.85 }}
               />

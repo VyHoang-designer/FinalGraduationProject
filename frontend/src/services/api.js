@@ -8,6 +8,16 @@ const API_BASE = 'http://localhost:8000/api';
 /**
  * Trả về đường dẫn đầy đủ của avatar (hỗ trợ static backend, base64, external URL)
  */
+export function getAssetUrl(path) {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) {
+    return path;
+  }
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  return baseUrl.endsWith('/') ? `${baseUrl}${cleanPath}` : `${baseUrl}/${cleanPath}`;
+}
+
 export function getAvatarUrl(url) {
   if (!url) return null;
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {

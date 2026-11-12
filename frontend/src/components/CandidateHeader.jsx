@@ -6,7 +6,7 @@
 // ==============================================================================
 
 import { useState, useRef, useEffect } from 'react';
-import { getAvatarUrl } from '../services/api';
+import { getAvatarUrl, getAssetUrl } from '../services/api';
 
 export default function CandidateHeader({ 
   currentUser, 
@@ -76,7 +76,15 @@ export default function CandidateHeader({
             onClick={() => onNavigate && onNavigate('candidate-portal')}
             style={{ cursor: 'pointer' }}
           >
-            <img src="/images/logo.png" alt="AI Matcher Logo" />
+            <img 
+              src={getAssetUrl('/images/logo.png')} 
+              alt="AI Matcher Logo" 
+              onError={(e) => {
+                if (!e.currentTarget.src.includes('/image/logo.png')) {
+                  e.currentTarget.src = getAssetUrl('/image/logo.png');
+                }
+              }}
+            />
             <span className="candidate-header__brand">AI MATCHER</span>
           </div>
 
