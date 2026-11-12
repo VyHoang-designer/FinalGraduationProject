@@ -8,6 +8,7 @@ Các schema dùng cho FastAPI endpoint validation:
   - Response schemas: Trả kết quả về Frontend
 """
 
+from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Literal, Any, List, Dict
 from pydantic import BaseModel, EmailStr
@@ -123,6 +124,15 @@ class CandidateCVResponse(CandidateCVBase):
 # ==============================================================================
 # MATCH RESULT SCHEMAS
 # ==============================================================================
+class GapItem(BaseModel):
+    """Một thiếu sót cụ thể của CV so với JD."""
+    category: str        # skill, experience, certification, project, ...
+    severity: str        # high, medium, low
+    title: str           # Tiêu đề ngắn
+    message: str         # Mô tả chi tiết
+    missing_items: list[str] = []
+
+
 class MatchResultResponse(BaseModel):
     id: int
     cv_id: int
@@ -179,15 +189,6 @@ class Match1ToNResponse(BaseModel):
 # ==============================================================================
 # N-TO-1 MATCHING SCHEMAS (1 JD → N CVs)
 # ==============================================================================
-class GapItem(BaseModel):
-    """Một thiếu sót cụ thể của CV so với JD."""
-    category: str        # skill, experience, certification, project, ...
-    severity: str        # high, medium, low
-    title: str           # Tiêu đề ngắn
-    message: str         # Mô tả chi tiết
-    missing_items: list[str] = []
-
-
 class CandidateMatchResult(BaseModel):
     """Kết quả matching 1 CV cho modal N-to-1."""
     cv_id: int
