@@ -56,12 +56,8 @@ function JobCard({ job, showExpiry = false, onApplyClick, onContactClick, isAppl
 
       <div className="candidate-job-card__logo">
         <img 
-          src={getAssetUrl(job.image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(job.department || 'IT')}&background=0284c7&color=fff&size=128`} 
+          src={getAssetUrl(job.image) || `https://ui-avatars.com/api/?name=${job.department || 'IT'}&background=random&size=128`} 
           alt="Company Logo" 
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(job.department || 'IT')}&background=0284c7&color=fff&size=128`;
-          }}
         />
       </div>
 
@@ -259,10 +255,32 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate, aut
     onNavigate('jobs');
   }
 
-  // Tìm thư mời phỏng vấn mới nhất mà ứng viên chưa phản hồi
-  const latestPendingInterview = useMemo(() => {
-    return (interviews || []).find(inv => !inv.interview_info?.candidate_response);
-  }, [interviews]);
+  // Lấy thông báo nổi bật cho ứng viên: Ưu tiên thông báo Trúng tuyển (Hired) -> Lời mời phỏng vấn
+  const [dismissedBannerId, setDismissedBannerId] = useState(null);
+
+  const activeNotification = useMemo(() => {
+    if (!interviews || interviews.length === 0) return null;
+
+    // 1. Ưu tiên thông báo Trúng tuyển & Nhận việc (Hired)
+    const hiredItem = interviews.find(
+      inv => (inv.status === 'hired' || inv.interview_info?.type === 'hired') && inv.match_id !== dismissedBannerId
+    );
+    if (hiredItem) {
+      return { item: hiredItem, type: 'hired' };
+    }
+
+    // 2. Tiếp theo là Lời mời phỏng vấn chưa phản hồi
+    const pendingInterview = interviews.find(
+      inv => (inv.status !== 'hired' && inv.interview_info?.type !== 'hired') && 
+             !inv.interview_info?.candidate_response && 
+             inv.match_id !== dismissedBannerId
+    );
+    if (pendingInterview) {
+      return { item: pendingInterview, type: 'interview' };
+    }
+
+    return null;
+  }, [interviews, dismissedBannerId]);
 
   return (
     <div className="candidate-portal-layout">
@@ -282,69 +300,156 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate, aut
       />
 
       <div className="candidate-portal-content">
-        {/* BANNER THÔNG BÁO LỊCH PHỎNG VẤN NỔI BẬT */}
-        {latestPendingInterview && (
+        {/* BANNER THÔNG BÁO NỔI BẬT: TRÚNG TUYỂN HOẶC LỊCH PHỎNG VẤN */}
+        {activeNotification && (
           <div style={{
             margin: '20px 24px 0',
             padding: '16px 22px',
-            background: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)',
-            border: '1px solid #bfdbfe',
+            background: activeNotification.type === 'hired'
+              ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #ecfdf5 100%)'
+              : 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)',
+            border: activeNotification.type === 'hired'
+              ? '1.5px solid #86efac'
+              : '1px solid #bfdbfe',
             borderRadius: '14px',
-            boxShadow: '0 4px 16px rgba(59, 130, 246, 0.12)',
+            boxShadow: activeNotification.type === 'hired'
+              ? '0 6px 20px rgba(16, 185, 129, 0.18)'
+              : '0 4px 16px rgba(59, 130, 246, 0.12)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
             gap: '14px',
+            position: 'relative',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: '300px' }}>
               <div style={{
-                width: '44px',
-                height: '44px',
+                width: '46px',
+                height: '46px',
                 borderRadius: '12px',
-                background: 'linear-gradient(135deg, #2563eb, #6366f1)',
+                background: activeNotification.type === 'hired'
+                  ? 'linear-gradient(135deg, #059669, #10b981)'
+                  : 'linear-gradient(135deg, #2563eb, #6366f1)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '1.3rem',
+                fontSize: '1.4rem',
                 color: '#ffffff',
                 flexShrink: 0,
-                boxShadow: '0 4px 10px rgba(99, 102, 241, 0.3)',
+                boxShadow: activeNotification.type === 'hired'
+                  ? '0 4px 12px rgba(16, 185, 129, 0.4)'
+                  : '0 4px 10px rgba(99, 102, 241, 0.3)',
               }}>
-                🎉
+                {activeNotification.type === 'hired' ? '🎉' : '✉️'}
               </div>
               <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Thông báo Lời mời Phỏng vấn Mới!
+                <div style={{
+                  fontSize: '0.78rem',
+                  fontWeight: 800,
+                  color: activeNotification.type === 'hired' ? '#047857' : '#2563eb',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}>
+                  {activeNotification.type === 'hired' ? '🏆 Thông báo Trúng tuyển & Nhận việc!' : 'Thông báo Lời mời Phỏng vấn Mới!'}
                 </div>
-                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
-                  Bạn nhận được thư mời phỏng vấn vị trí <span style={{ color: '#4338ca' }}>{latestPendingInterview.job_title}</span>
+                <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
+                  {activeNotification.type === 'hired' ? (
+                    <>
+                      Chúc mừng! Bạn đã chính thức trúng tuyển vị trí{' '}
+                      <span style={{ color: '#047857' }}>{activeNotification.item.job_title}</span>
+                    </>
+                  ) : (
+                    <>
+                      Bạn nhận được thư mời phỏng vấn vị trí{' '}
+                      <span style={{ color: '#4338ca' }}>{activeNotification.item.job_title}</span>
+                    </>
+                  )}
                 </div>
-                <div style={{ fontSize: '0.84rem', color: '#475569', marginTop: '3px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  <span>🏢 {latestPendingInterview.department}</span>
-                  <span>⏰ {latestPendingInterview.interview_info?.scheduled_at ? new Date(latestPendingInterview.interview_info.scheduled_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Chưa định ngày'}</span>
-                  <span>📍 {latestPendingInterview.interview_info?.location}</span>
+                <div style={{ fontSize: '0.84rem', color: '#475569', marginTop: '4px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span>🏢 {activeNotification.item.department || 'Nhà tuyển dụng'}</span>
+                  {activeNotification.type === 'hired' ? (
+                    <>
+                      <span style={{
+                        background: '#bbf7d0',
+                        color: '#14532d',
+                        padding: '1px 8px',
+                        borderRadius: '10px',
+                        fontWeight: 700,
+                        fontSize: '0.76rem',
+                      }}>
+                        ✓ Đã tuyển (Hired)
+                      </span>
+                      {(activeNotification.item.interview_info?.start_date || activeNotification.item.interview_info?.scheduled_at) && (
+                        <span>📅 Ngày nhận việc: {new Date(activeNotification.item.interview_info?.start_date || activeNotification.item.interview_info?.scheduled_at).toLocaleDateString('vi-VN')}</span>
+                      )}
+                      {activeNotification.item.interview_info?.salary_offer && (
+                        <span style={{ color: '#047857', fontWeight: 700 }}>💵 Offer: {activeNotification.item.interview_info.salary_offer}</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span>⏰ {activeNotification.item.interview_info?.scheduled_at ? new Date(activeNotification.item.interview_info.scheduled_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Chưa định ngày'}</span>
+                      <span>📍 {activeNotification.item.interview_info?.location || 'Trực tuyến'}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            <button
-              className="btn btn--primary"
-              onClick={() => setSelectedInterviewForModal(latestPendingInterview)}
-              style={{
-                padding: '9px 18px',
-                fontSize: '0.88rem',
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <span>Xem & Xác nhận đi phỏng vấn ➔</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                className="btn btn--primary"
+                onClick={() => setSelectedInterviewForModal(activeNotification.item)}
+                style={{
+                  padding: '9px 20px',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  background: activeNotification.type === 'hired'
+                    ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                    : 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
+                  boxShadow: activeNotification.type === 'hired'
+                    ? '0 4px 14px rgba(5, 150, 105, 0.3)'
+                    : '0 4px 12px rgba(37, 99, 235, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                }}
+              >
+                <span>
+                  {activeNotification.type === 'hired' 
+                    ? 'Xem thư trúng tuyển & nhận việc ➔' 
+                    : 'Xem & Xác nhận đi phỏng vấn ➔'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDismissedBannerId(activeNotification.item.match_id)}
+                title="Ẩn thông báo này"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '1.2rem',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  lineHeight: '1',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#475569'}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
 
@@ -357,11 +462,6 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate, aut
               src={banner.src} 
               alt={banner.alt} 
               className={`candidate-banner__img ${index === currentBannerIndex ? 'candidate-banner__img--active' : ''}`} 
-              onError={(e) => {
-                if (!e.currentTarget.src.includes('/image/banner')) {
-                  e.currentTarget.src = e.currentTarget.src.replace('/images/banner', '/image/banner');
-                }
-              }}
             />
           ))}
 

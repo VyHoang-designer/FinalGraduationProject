@@ -901,15 +901,17 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
                 {interviews.map(inv => {
                   const info = inv.interview_info || {};
                   const response = info.candidate_response;
+                  const isHired = inv.status === 'hired' || info.type === 'hired';
+
                   return (
                     <div 
                       key={inv.match_id}
                       style={{
-                        background: '#ffffff',
-                        border: '1px solid #e2e8f0',
+                        background: isHired ? '#f0fdf4' : '#ffffff',
+                        border: isHired ? '1.5px solid #86efac' : '1px solid #e2e8f0',
                         borderRadius: '14px',
                         padding: '22px',
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                        boxShadow: isHired ? '0 4px 16px rgba(16, 185, 129, 0.12)' : '0 2px 10px rgba(0,0,0,0.04)',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '14px',
@@ -918,19 +920,23 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '1.3rem' }}>✉️</span>
-                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1e293b' }}>
-                              {inv.job_title}
+                            <span style={{ fontSize: '1.3rem' }}>{isHired ? '🏆' : '✉️'}</span>
+                            <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: isHired ? '#065f46' : '#1e293b' }}>
+                              {isHired ? `🎉 Trúng tuyển: ${inv.job_title}` : inv.job_title}
                             </h4>
                           </div>
                           <div style={{ fontSize: '0.88rem', color: '#64748b', marginTop: '4px' }}>
-                            🏢 {inv.department || 'Công ty Công nghệ'} — Ban Tuyển dụng
+                            🏢 {inv.department || 'Công ty Công nghệ'} — {isHired ? 'Quyết định Tuyển dụng & Tiếp nhận' : 'Ban Tuyển dụng'}
                           </div>
                         </div>
 
                         {/* Status Badge */}
                         <div>
-                          {response === 'confirmed' ? (
+                          {isHired ? (
+                            <span style={{ fontSize: '0.84rem', padding: '6px 12px', borderRadius: '8px', background: '#bbf7d0', color: '#166534', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                              ✓ Đã trúng tuyển (Hired)
+                            </span>
+                          ) : response === 'confirmed' ? (
                             <span style={{ fontSize: '0.84rem', padding: '6px 12px', borderRadius: '8px', background: '#dcfce7', color: '#15803d', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                               ✓ Đã xác nhận tham gia
                             </span>
@@ -948,7 +954,7 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
 
                       {/* Thông tin chi tiết */}
                       <div style={{
-                        background: '#f8fafc',
+                        background: '#ffffff',
                         borderRadius: '10px',
                         padding: '14px 18px',
                         display: 'grid',
@@ -957,20 +963,39 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
                         border: '1px solid #f1f5f9',
                       }}>
                         <div>
-                          <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Thời gian:</div>
-                          <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#4338ca', marginTop: '2px' }}>
-                            ⏰ {info.scheduled_at ? new Date(info.scheduled_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Chưa định ngày'}
+                          <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                            {isHired ? 'Ngày nhận việc dự kiến:' : 'Thời gian phỏng vấn:'}
+                          </div>
+                          <div style={{ fontSize: '0.98rem', fontWeight: 800, color: isHired ? '#047857' : '#4338ca', marginTop: '2px' }}>
+                            {isHired ? (
+                              info.start_date || info.scheduled_at 
+                                ? `📅 ${new Date(info.start_date || info.scheduled_at).toLocaleDateString('vi-VN')}`
+                                : '📅 Theo thỏa thuận'
+                            ) : (
+                              `⏰ ${info.scheduled_at ? new Date(info.scheduled_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Chưa định ngày'}`
+                            )}
                           </div>
                         </div>
 
                         <div>
-                          <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Hình thức & Địa điểm:</div>
+                          <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                            {isHired ? 'Địa điểm làm việc:' : 'Hình thức & Địa điểm:'}
+                          </div>
                           <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1e293b', marginTop: '2px' }}>
-                            📍 [{info.interview_type || 'Trực tiếp'}] {info.location}
+                            📍 {isHired ? (info.location || 'Tại văn phòng công ty') : `[${info.interview_type || 'Trực tiếp'}] ${info.location}`}
                           </div>
                         </div>
 
-                        {info.interviewer && (
+                        {isHired && info.salary_offer && (
+                          <div>
+                            <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Mức lương Offer:</div>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
+                              💵 {info.salary_offer}
+                            </div>
+                          </div>
+                        )}
+
+                        {!isHired && info.interviewer && (
                           <div>
                             <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Người liên hệ:</div>
                             <div style={{ fontSize: '0.92rem', color: '#334155', marginTop: '2px' }}>
@@ -980,8 +1005,14 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
                         )}
                       </div>
 
-                      {/* Ghi chú phản hồi hiện tại (nếu có) */}
-                      {info.candidate_note && (
+                      {/* Ghi chú / Lời nhắn */}
+                      {(info.message || info.note) && isHired && (
+                        <div style={{ fontSize: '0.86rem', color: '#065f46', fontStyle: 'italic', background: '#ecfdf5', padding: '10px 14px', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
+                          Lời nhắn nhà tuyển dụng: "{info.message || info.note}"
+                        </div>
+                      )}
+
+                      {!isHired && info.candidate_note && (
                         <div style={{ fontSize: '0.86rem', color: '#475569', fontStyle: 'italic', background: '#f1f5f9', padding: '8px 12px', borderRadius: '6px' }}>
                           Lời nhắn của bạn: "{info.candidate_note}"
                         </div>
@@ -999,9 +1030,17 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
+                            background: isHired
+                              ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                              : 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
+                            border: 'none',
                           }}
                         >
-                          <span>{response ? 'Xem lại thư mời / Đổi phản hồi' : 'Xem chi tiết & Xác nhận đi phỏng vấn ➔'}</span>
+                          <span>
+                            {isHired 
+                              ? 'Xem thư trúng tuyển & quyết định tiếp nhận ➔' 
+                              : (response ? 'Xem lại thư mời / Đổi phản hồi' : 'Xem chi tiết & Xác nhận đi phỏng vấn ➔')}
+                          </span>
                         </button>
                       </div>
                     </div>

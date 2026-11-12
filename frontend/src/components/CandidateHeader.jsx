@@ -76,15 +76,7 @@ export default function CandidateHeader({
             onClick={() => onNavigate && onNavigate('candidate-portal')}
             style={{ cursor: 'pointer' }}
           >
-            <img 
-              src={getAssetUrl('/images/logo.png')} 
-              alt="AI Matcher Logo" 
-              onError={(e) => {
-                if (!e.currentTarget.src.includes('/image/logo.png')) {
-                  e.currentTarget.src = getAssetUrl('/image/logo.png');
-                }
-              }}
-            />
+            <img src={getAssetUrl('/images/logo.png')} alt="AI Matcher Logo" />
             <span className="candidate-header__brand">AI MATCHER</span>
           </div>
 
@@ -254,8 +246,8 @@ export default function CandidateHeader({
                                 "{inv.interview_info.message}"
                               </div>
                             )}
-                            <div style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>
-                              ✨ Nhà tuyển dụng đã nhận bạn vào làm việc
+                            <div style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                              <span>✨ Nhà tuyển dụng đã tiếp nhận bạn vào làm việc • Bấm xem thư trúng tuyển ➔</span>
                             </div>
                           </div>
                         );
