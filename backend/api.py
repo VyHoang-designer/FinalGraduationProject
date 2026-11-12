@@ -65,13 +65,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[API] Warning DB init: {e}", flush=True)
 
-    # Tự động nạp dữ liệu mẫu (JDs, Users, Candidates) nếu database đang trống
+    # Tự động nạp dữ liệu mẫu (JDs, Users, Candidates) nếu database đang thiếu
     try:
-        from database import SessionLocal, JobDescription
+        from database import SessionLocal
+        from models import JobDescription, User
         with SessionLocal() as db:
             job_count = db.query(JobDescription).count()
-            if job_count == 0:
-                print("[API] Database đang trống. Đang tự động nạp dữ liệu mẫu...", flush=True)
+            user_count = db.query(User).count()
+            if job_count == 0 or user_count == 0:
+                print(f"[API] Database thiếu dữ liệu (JDs: {job_count}, Users: {user_count}). Đang tự động nạp dữ liệu mẫu...", flush=True)
                 from seed_data import seed
                 seed()
                 print("[API] Đã nạp dữ liệu mẫu thành công!", flush=True)

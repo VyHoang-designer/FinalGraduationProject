@@ -21,38 +21,81 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from database import engine, SessionLocal, Base
-from models import JobDescription, CandidateCV
+from models import JobDescription, CandidateCV, User, Company, MatchResult
+from datetime import datetime
 
 
-def seed():
-    """Tạo tables và nạp dữ liệu demo."""
-    # Tạo tất cả tables
+def seed(force_recreate: bool = False):
+    """Tạo tables và nạp dữ liệu demo tự động."""
     Base.metadata.create_all(bind=engine)
     print("✓ Đã tạo/kiểm tra database tables.")
 
     db = SessionLocal()
 
     try:
-        # Kiểm tra nếu đã có dữ liệu
+        # ==========================================================
+        # 1. SEED USERS (Nhà tuyển dụng & Ứng viên)
+        # ==========================================================
+        demo_users = [
+            {
+                "full_name": "Admin Nhà Tuyển Dụng",
+                "email": "admin@aimatcher.vn",
+                "password": "admin123",
+                "role": "nha_tuyen_dung",
+                "phone": "0987654321",
+            },
+            {
+                "full_name": "Vy Hoang",
+                "email": "hahoangvy0707@gmail.com",
+                "password": "admin123",
+                "role": "nha_tuyen_dung",
+                "phone": "0901234567",
+            },
+            {
+                "full_name": "messi cr7",
+                "email": "messi772004@gmail.com",
+                "password": "admin123",
+                "role": "ung_tuyen",
+                "phone": "0377891254",
+            },
+            {
+                "full_name": "ben mr",
+                "email": "mrbenhandsome2000@gmail.com",
+                "password": "admin123",
+                "role": "ung_tuyen",
+                "phone": "0911223344",
+            },
+        ]
+
+        user_map = {}
+        for udata in demo_users:
+            u = db.query(User).filter(User.email == udata["email"]).first()
+            if not u:
+                u = User(
+                    full_name=udata["full_name"],
+                    email=udata["email"],
+                    password_hash=User.hash_password(udata["password"]),
+                    role=udata["role"],
+                    phone=udata["phone"],
+                    is_active=True,
+                )
+                db.add(u)
+                db.flush()
+            else:
+                # Đảm bảo role và password đúng
+                u.role = udata["role"]
+                u.password_hash = User.hash_password(udata["password"])
+                db.flush()
+            user_map[udata["email"]] = u
+        db.commit()
+        print(f"  ✓ Đã kiểm tra/tạo {len(user_map)} tài khoản Users demo (admin@aimatcher.vn / admin123).")
+
+        # ==========================================================
+        # 2. SEED JOB DESCRIPTIONS (Nạp JD nếu chưa có)
+        # ==========================================================
         existing_jds = db.query(JobDescription).count()
-        existing_cvs = db.query(CandidateCV).count()
-
-        if existing_jds > 0 or existing_cvs > 0:
-            print(f"  Database đã có {existing_jds} JDs và {existing_cvs} CVs.")
-            response = input("  Bạn có muốn xóa và tạo lại dữ liệu demo? (y/n): ")
-            if response.lower() != 'y':
-                print("  Bỏ qua seed data.")
-                return
-            # Xóa dữ liệu cũ
-            db.query(CandidateCV).delete()
-            db.query(JobDescription).delete()
-            db.commit()
-            print("  ✓ Đã xóa dữ liệu cũ.")
-
-        # ==========================================================
-        # SEED JOB DESCRIPTIONS
-        # ==========================================================
-        jds = [
+        if existing_jds == 0 or force_recreate:
+            jds = [
             JobDescription(
                 title="Backend Developer (Python/FastAPI)",
                 jd_text="""
@@ -235,113 +278,221 @@ def seed():
             ),
         ]
 
-        for jd in jds:
-            db.add(jd)
-        db.flush()
-        print(f"  ✓ Đã tạo {len(jds)} JDs.")
+            for jd in jds:
+                db.add(jd)
+            db.flush()
+            print(f"  ✓ Đã tạo {len(jds)} JDs.")
 
         # ==========================================================
-        # SEED CANDIDATES
+        # 3. SEED CANDIDATES
         # ==========================================================
-        candidates = [
-            CandidateCV(
-                full_name="Hoàng Vy",
-                email="hoangvy@email.com",
-                phone="0901234567",
+        existing_cvs = db.query(CandidateCV).count()
+        if existing_cvs == 0 or force_recreate:
+            candidates = [
+                CandidateCV(
+                    full_name="Hoàng Vy",
+                    email="hoangvy@email.com",
+                    phone="0901234567",
+                    cv_text="""
+                    Họ và tên: Hoàng Vy
+                    Học vấn: Tốt nghiệp Đại học Đà Lạt, chuyên ngành Công nghệ thông tin (Cử nhân).
+                    Chứng chỉ: IELTS 6.5
+                    Mục tiêu: Trở thành Backend Developer chuyên nghiệp.
+                    Kinh nghiệm: Tôi đã có 2.5 năm kinh nghiệm làm việc thực tế.
+                    Kỹ năng chuyên môn:
+                    - Lập trình nền tảng với C++, C# và Python.
+                    - Có khả năng xây dựng API bằng FastAPI và phát triển web với ASP.NET.
+                    - Quản trị cơ sở dữ liệu tốt bằng PostgreSQL và SQL Server.
+                    - Đã từng làm app desktop dùng SQLite.
+                    Dự án thực tế:
+                    - Đã deploy hệ thống API lên VPS sử dụng Docker và CI/CD pipeline.
+                    - Xây dựng microservice xử lý thanh toán cho 1000+ users.
+                    - Phát triển web app quản lý nhân sự với ASP.NET Core và PostgreSQL.
+                    Thành tích: Đạt giải nhất cuộc thi lập trình cấp trường năm 2023.
+                    """,
+                    parsed_skills=["python", "c++", "c#", "fastapi", "asp.net", "postgresql", "sql server", "sqlite", "docker", "ci/cd"],
+                    project_descriptions=[
+                        "Deploy hệ thống API lên VPS sử dụng Docker và CI/CD",
+                        "Xây dựng microservice xử lý thanh toán với FastAPI và PostgreSQL",
+                        "Phát triển web app quản lý nhân sự với ASP.NET Core",
+                    ],
+                    education="Cử nhân CNTT - Đại học Đà Lạt",
+                    experience_years=2.5,
+                ),
+                CandidateCV(
+                    full_name="Nguyễn Minh Tuấn",
+                    email="minhtuan@email.com",
+                    phone="0912345678",
+                    cv_text="""
+                    Họ và tên: Nguyễn Minh Tuấn
+                    Học vấn: Thạc sĩ Khoa học Máy tính - ĐH Bách Khoa TP.HCM.
+                    Chứng chỉ: TOEIC 850, AWS Certified Developer Associate.
+                    Kinh nghiệm: 4 năm kinh nghiệm trong lĩnh vực AI/ML.
+                    Kỹ năng chuyên môn:
+                    - Python, PyTorch, TensorFlow, scikit-learn.
+                    - NLP: spaCy, Hugging Face Transformers, Sentence-BERT.
+                    - Backend: FastAPI, Flask, Docker.
+                    - Cloud: AWS SageMaker, EC2, S3.
+                    Dự án nổi bật:
+                    - Xây dựng hệ thống NER tiếng Việt với spaCy, đạt F1-score 92%.
+                    - Fine-tune PhoBERT cho bài toán sentiment analysis.
+                    - Deploy mô hình ML lên production phục vụ 10K+ requests/ngày.
+                    Thành tích:
+                    - Giải nhì cuộc thi AI Hackathon 2023.
+                    - Published paper tại hội nghị RIVF 2024.
+                    - Team Lead nhóm AI gồm 4 người.
+                    """,
+                    parsed_skills=["python", "pytorch", "tensorflow", "fastapi", "flask", "docker", "aws", "spacy", "nlp"],
+                    project_descriptions=[
+                        "Hệ thống NER tiếng Việt với spaCy, F1-score 92%",
+                        "Fine-tune PhoBERT cho sentiment analysis",
+                        "Deploy ML model production 10K+ requests/ngày",
+                    ],
+                    education="Thạc sĩ KHMT - ĐH Bách Khoa TP.HCM",
+                    experience_years=4.0,
+                ),
+                CandidateCV(
+                    full_name="Trần Thị Mai",
+                    email="tranmai@email.com",
+                    phone="0923456789",
+                    cv_text="""
+                    Họ và tên: Trần Thị Mai
+                    Học vấn: Cử nhân CNTT - Đại học FPT.
+                    Kinh nghiệm: 1 năm kinh nghiệm thực tập và freelance.
+                    Kỹ năng:
+                    - Frontend: React, JavaScript, HTML, CSS, TypeScript.
+                    - Có kiến thức cơ bản về Node.js và Express.
+                    - Sử dụng Git, Figma.
+                    Dự án:
+                    - Xây dựng website portfolio cá nhân bằng React.
+                    - Tham gia phát triển landing page cho startup.
+                    - Clone giao diện Spotify bằng React + Tailwind CSS.
+                    Hoạt động ngoại khóa:
+                    - Sinh viên xuất sắc năm 2023.
+                    - Mentor cho các bạn sinh viên năm nhất về HTML/CSS.
+                    """,
+                    parsed_skills=["react", "javascript", "html", "css", "typescript", "git", "node.js"],
+                    project_descriptions=[
+                        "Website portfolio cá nhân bằng React",
+                        "Landing page cho startup",
+                        "Clone giao diện Spotify bằng React + Tailwind CSS",
+                    ],
+                    education="Cử nhân CNTT - Đại học FPT",
+                    experience_years=1.0,
+                ),
+            ]
+
+            for c in candidates:
+                db.add(c)
+            db.flush()
+            print(f"  ✓ Đã tạo {len(candidates)} Candidates.")
+
+        # ==========================================================
+        # 4. TẠO CV & KẾT QUẢ GÁN (ASSIGN HIRED) CHO MESSI CR7
+        # ==========================================================
+        messi_user = user_map.get("messi772004@gmail.com")
+        messi_cv = db.query(CandidateCV).filter(CandidateCV.email == "messi772004@gmail.com").first()
+        if not messi_cv:
+            messi_cv = CandidateCV(
+                full_name="messi cr7",
+                email="messi772004@gmail.com",
+                phone="0377891254",
                 cv_text="""
-                Họ và tên: Hoàng Vy
-                Học vấn: Tốt nghiệp Đại học Đà Lạt, chuyên ngành Công nghệ thông tin (Cử nhân).
-                Chứng chỉ: IELTS 6.5
-                Mục tiêu: Trở thành Backend Developer chuyên nghiệp.
-                Kinh nghiệm: Tôi đã có 2.5 năm kinh nghiệm làm việc thực tế.
-                Kỹ năng chuyên môn:
-                - Lập trình nền tảng với C++, C# và Python.
-                - Có khả năng xây dựng API bằng FastAPI và phát triển web với ASP.NET.
-                - Quản trị cơ sở dữ liệu tốt bằng PostgreSQL và SQL Server.
-                - Đã từng làm app desktop dùng SQLite.
-                Dự án thực tế:
-                - Đã deploy hệ thống API lên VPS sử dụng Docker và CI/CD pipeline.
-                - Xây dựng microservice xử lý thanh toán cho 1000+ users.
-                - Phát triển web app quản lý nhân sự với ASP.NET Core và PostgreSQL.
-                Thành tích: Đạt giải nhất cuộc thi lập trình cấp trường năm 2023.
-                """,
-                parsed_skills=["python", "c++", "c#", "fastapi", "asp.net", "postgresql", "sql server", "sqlite", "docker", "ci/cd"],
-                project_descriptions=[
-                    "Deploy hệ thống API lên VPS sử dụng Docker và CI/CD",
-                    "Xây dựng microservice xử lý thanh toán với FastAPI và PostgreSQL",
-                    "Phát triển web app quản lý nhân sự với ASP.NET Core",
-                ],
-                education="Cử nhân CNTT - Đại học Đà Lạt",
-                experience_years=2.5,
-            ),
-            CandidateCV(
-                full_name="Nguyễn Minh Tuấn",
-                email="minhtuan@email.com",
-                phone="0912345678",
-                cv_text="""
-                Họ và tên: Nguyễn Minh Tuấn
-                Học vấn: Thạc sĩ Khoa học Máy tính - ĐH Bách Khoa TP.HCM.
-                Chứng chỉ: TOEIC 850, AWS Certified Developer Associate.
-                Kinh nghiệm: 4 năm kinh nghiệm trong lĩnh vực AI/ML.
-                Kỹ năng chuyên môn:
-                - Python, PyTorch, TensorFlow, scikit-learn.
-                - NLP: spaCy, Hugging Face Transformers, Sentence-BERT.
-                - Backend: FastAPI, Flask, Docker.
-                - Cloud: AWS SageMaker, EC2, S3.
-                Dự án nổi bật:
-                - Xây dựng hệ thống NER tiếng Việt với spaCy, đạt F1-score 92%.
-                - Fine-tune PhoBERT cho bài toán sentiment analysis.
-                - Deploy mô hình ML lên production phục vụ 10K+ requests/ngày.
-                Thành tích:
-                - Giải nhì cuộc thi AI Hackathon 2023.
-                - Published paper tại hội nghị RIVF 2024.
-                - Team Lead nhóm AI gồm 4 người.
-                """,
-                parsed_skills=["python", "pytorch", "tensorflow", "fastapi", "flask", "docker", "aws", "spacy", "nlp"],
-                project_descriptions=[
-                    "Hệ thống NER tiếng Việt với spaCy, F1-score 92%",
-                    "Fine-tune PhoBERT cho sentiment analysis",
-                    "Deploy ML model production 10K+ requests/ngày",
-                ],
-                education="Thạc sĩ KHMT - ĐH Bách Khoa TP.HCM",
-                experience_years=4.0,
-            ),
-            CandidateCV(
-                full_name="Trần Thị Mai",
-                email="tranmai@email.com",
-                phone="0923456789",
-                cv_text="""
-                Họ và tên: Trần Thị Mai
-                Học vấn: Cử nhân CNTT - Đại học FPT.
-                Kinh nghiệm: 1 năm kinh nghiệm thực tập và freelance.
-                Kỹ năng:
-                - Frontend: React, JavaScript, HTML, CSS, TypeScript.
-                - Có kiến thức cơ bản về Node.js và Express.
-                - Sử dụng Git, Figma.
+                Họ và tên: messi cr7
+                Học vấn: Cử nhân Công nghệ Thông tin - Chuyên ngành AI / Machine Learning.
+                Kinh nghiệm: 2 năm kinh nghiệm phát triển phần mềm và ứng dụng AI.
+                Kỹ năng: Python, PyTorch, TensorFlow, FastAPI, Docker, PostgreSQL, React, JavaScript.
                 Dự án:
-                - Xây dựng website portfolio cá nhân bằng React.
-                - Tham gia phát triển landing page cho startup.
-                - Clone giao diện Spotify bằng React + Tailwind CSS.
-                Hoạt động ngoại khóa:
-                - Sinh viên xuất sắc năm 2023.
-                - Mentor cho các bạn sinh viên năm nhất về HTML/CSS.
+                - Xây dựng hệ thống đặt phòng khách sạn tích hợp FastAPI và PostgreSQL.
+                - Phát triển mô hình AI matching CV-JD tự động.
                 """,
-                parsed_skills=["react", "javascript", "html", "css", "typescript", "git", "node.js"],
+                parsed_skills=["python", "pytorch", "tensorflow", "fastapi", "docker", "postgresql", "react", "javascript"],
                 project_descriptions=[
-                    "Website portfolio cá nhân bằng React",
-                    "Landing page cho startup",
-                    "Clone giao diện Spotify bằng React + Tailwind CSS",
+                    "Xây dựng hệ thống đặt phòng khách sạn tích hợp FastAPI và PostgreSQL",
+                    "Phát triển mô hình AI matching CV-JD tự động"
                 ],
-                education="Cử nhân CNTT - Đại học FPT",
-                experience_years=1.0,
-            ),
-        ]
+                education="Cử nhân CNTT",
+                experience_years=2.0,
+                user_id=messi_user.id if messi_user else None,
+            )
+            db.add(messi_cv)
+            db.flush()
 
-        for c in candidates:
-            db.add(c)
+        # Tạo MatchResult Hired cho messi cr7 nếu chưa có
+        ai_jd = db.query(JobDescription).filter(JobDescription.title.ilike("%AI/ML%")).first()
+        if ai_jd and messi_cv:
+            existing_match = db.query(MatchResult).filter(MatchResult.cv_id == messi_cv.id, MatchResult.jd_id == ai_jd.id).first()
+            if not existing_match:
+                match = MatchResult(
+                    cv_id=messi_cv.id,
+                    jd_id=ai_jd.id,
+                    match_score=85.0,
+                    match_level="Rất phù hợp",
+                    status="hired",
+                    applied_at=datetime.utcnow(),
+                    interview_info={
+                        "type": "hired",
+                        "status": "hired",
+                        "job_title": ai_jd.title,
+                        "department": ai_jd.department or "AI Research Lab",
+                        "location": ai_jd.location or "TP. Hồ Chí Minh",
+                        "start_date": "2026-11-20T08:00:00",
+                        "salary_offer": "25 Triệu VNĐ",
+                        "message": "Chúc mừng bạn messi cr7! Nhà tuyển dụng rất ấn tượng với hồ sơ của bạn và chính thức tiếp nhận bạn vào làm việc.",
+                    }
+                )
+                db.add(match)
+                db.flush()
+
+        # ==========================================================
+        # 5. SEED COMPANIES DEMO
+        # ==========================================================
+        existing_companies = db.query(Company).count()
+        if existing_companies == 0 or force_recreate:
+            demo_companies = [
+                Company(
+                    name="AI Research Lab",
+                    industry="Trí tuệ nhân tạo & Công nghệ",
+                    location="TP. Hồ Chí Minh",
+                    size="50-150 nhân viên",
+                    description="Phòng thí nghiệm nghiên cứu và phát triển các sản phẩm Trí tuệ Nhân tạo, NLP và Computer Vision hàng đầu.",
+                    email="contact@airesearch.vn",
+                    phone="028 1234 5678",
+                    website="https://airesearch.vn",
+                    cover_image="/images/hochiminh.png",
+                    is_partner=True,
+                ),
+                Company(
+                    name="Viettel Solutions",
+                    industry="Viễn thông & Giải pháp số",
+                    location="Hà Nội",
+                    size="1000+ nhân viên",
+                    description="Tổng công ty Giải pháp Doanh nghiệp Viettel — Tiên phong chuyển đổi số quốc gia.",
+                    email="tuyendung@viettelsolutions.vn",
+                    phone="024 6266 0000",
+                    website="https://viettelsolutions.vn",
+                    cover_image="/images/hanoi.png",
+                    is_partner=True,
+                ),
+                Company(
+                    name="FPT Software",
+                    industry="Xuất khẩu phần mềm",
+                    location="Đà Nẵng",
+                    size="1000+ nhân viên",
+                    description="Công ty phần mềm hàng đầu Việt Nam và khu vực, chuyên cung cấp dịch vụ CNTT toàn cầu.",
+                    email="recruitment@fsoft.com.vn",
+                    phone="0236 399 9999",
+                    website="https://fpt-software.com",
+                    cover_image="/images/DaNang.png",
+                    is_partner=True,
+                ),
+            ]
+            for comp in demo_companies:
+                db.add(comp)
+            db.flush()
+            print("  ✓ Đã tạo danh sách Companies demo.")
 
         db.commit()
-        print(f"  ✓ Đã tạo {len(candidates)} Candidates.")
         print("\n✓ Seed data hoàn tất!")
         print(f"  - {len(jds)} Job Descriptions")
         print(f"  - {len(candidates)} Candidates")
