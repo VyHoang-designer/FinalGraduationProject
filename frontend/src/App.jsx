@@ -3,7 +3,7 @@
 // MÔ TẢ: Root App — Phân luồng giao diện Ứng viên / Nhà tuyển dụng
 // ==============================================================================
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import JobListingsPage from './pages/JobListingsPage';
@@ -20,18 +20,102 @@ import InquiriesManagementPage from './pages/InquiriesManagementPage';
 import FloatingWidgets from './components/FloatingWidgets';
 import { signOutFirebase } from './services/firebase';
 
+const STORAGE_KEY_USER = 'aimatcher_current_user';
+const STORAGE_KEY_PAGE = 'aimatcher_current_page';
+const STORAGE_KEY_CANDIDATE_ID = 'aimatcher_candidate_id';
+
 export default function App() {
-  const [currentPage, setCurrentPage] = useState('auth');
-  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+  // 1. Phục hồi thông tin người dùng từ localStorage khi load/refresh trang
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_USER);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.warn('Lỗi đọc currentUser từ localStorage:', e);
+      return null;
+    }
+  });
+
+  // 2. Phục hồi trang hiện tại từ localStorage
+  const [currentPage, setCurrentPage] = useState(() => {
+    try {
+      const savedUserStr = localStorage.getItem(STORAGE_KEY_USER);
+      const savedPage = localStorage.getItem(STORAGE_KEY_PAGE);
+      if (savedUserStr) {
+        const savedUser = JSON.parse(savedUserStr);
+        if (savedPage && savedPage !== 'auth') {
+          return savedPage;
+        }
+        return savedUser?.role === 'ung_tuyen' ? 'candidate-portal' : 'jobs';
+      }
+      return 'auth';
+    } catch (e) {
+      console.warn('Lỗi đọc currentPage từ localStorage:', e);
+      return 'auth';
+    }
+  });
+
+  const [selectedCandidateId, setSelectedCandidateId] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_CANDIDATE_ID);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
   const [contactJobData, setContactJobData] = useState(null);
 
+  // Tự động đồng bộ currentUser vào localStorage mỗi khi thay đổi
+  useEffect(() => {
+    if (currentUser) {
+      try {
+        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentUser));
+      } catch (e) {
+        console.warn('Lỗi ghi currentUser vào localStorage:', e);
+      }
+    } else {
+      localStorage.removeItem(STORAGE_KEY_USER);
+    }
+  }, [currentUser]);
+
+  // Tự động đồng bộ currentPage vào localStorage mỗi khi chuyển trang
+  useEffect(() => {
+    if (currentPage && currentPage !== 'auth') {
+      try {
+        localStorage.setItem(STORAGE_KEY_PAGE, currentPage);
+      } catch (e) {
+        console.warn('Lỗi ghi currentPage vào localStorage:', e);
+      }
+    } else if (currentPage === 'auth') {
+      localStorage.removeItem(STORAGE_KEY_PAGE);
+    }
+  }, [currentPage]);
+
+  // Đồng bộ selectedCandidateId
+  useEffect(() => {
+    if (selectedCandidateId) {
+      try {
+        localStorage.setItem(STORAGE_KEY_CANDIDATE_ID, JSON.stringify(selectedCandidateId));
+      } catch {}
+    } else {
+      localStorage.removeItem(STORAGE_KEY_CANDIDATE_ID);
+    }
+  }, [selectedCandidateId]);
+
   function navigateTo(page, data = null) {
     setCurrentPage(page);
+    try {
+      localStorage.setItem(STORAGE_KEY_PAGE, page);
+    } catch {}
+
     if (page === 'candidate-detail' && data?.candidateId) {
       setSelectedCandidateId(data.candidateId);
+      try {
+        localStorage.setItem(STORAGE_KEY_CANDIDATE_ID, JSON.stringify(data.candidateId));
+      } catch {}
     }
     if (page === 'contact') {
       setContactJobData(data?.job || null);
@@ -40,11 +124,15 @@ export default function App() {
 
   function handleLogin(user) {
     setCurrentUser(user);
-    if (user.role === 'ung_tuyen') {
-      setCurrentPage('candidate-portal');
-    } else {
-      setCurrentPage('jobs');
-    }
+    try {
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+    } catch {}
+
+    const targetPage = user.role === 'ung_tuyen' ? 'candidate-portal' : 'jobs';
+    setCurrentPage(targetPage);
+    try {
+      localStorage.setItem(STORAGE_KEY_PAGE, targetPage);
+    } catch {}
   }
 
   function handleLogout() {
@@ -52,6 +140,12 @@ export default function App() {
     setCurrentUser(null);
     setCurrentPage('auth');
     setGlobalSearchTerm('');
+    setSelectedCandidateId(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY_USER);
+      localStorage.removeItem(STORAGE_KEY_PAGE);
+      localStorage.removeItem(STORAGE_KEY_CANDIDATE_ID);
+    } catch {}
   }
 
   // Nếu chưa đăng nhập, bắt buộc ở trang Auth

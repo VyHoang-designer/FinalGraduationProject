@@ -28,6 +28,7 @@ export default function AuthPage({ onNavigate, onLogin }) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Khi chuyển sang đăng ký, tự động set role là ung_tuyen
   useEffect(() => {
@@ -284,7 +285,11 @@ export default function AuthPage({ onNavigate, onLogin }) {
             {mode === 'login' && (
               <div className="auth-form__row">
                 <label className="auth-checkbox">
-                  <input type="checkbox" />
+                  <input 
+                    type="checkbox" 
+                    checked={rememberMe} 
+                    onChange={e => setRememberMe(e.target.checked)} 
+                  />
                   <span>Ghi nhớ tôi</span>
                 </label>
                 <a href="#" className="auth-link">Quên mật khẩu?</a>
