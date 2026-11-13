@@ -25,14 +25,26 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
 
   useEffect(() => {
     // Tải danh sách CV của user hiện tại
-    if (currentUser?.id) {
-      fetchMyCVs(currentUser.id).then(data => {
-        setCandidates(data);
-        if (data.length > 0) setSelectedCandidateId(data[0].id);
-      }).catch(err => {
-        setError('Lỗi khi tải danh sách CV: ' + err.message);
-      });
-    }
+    const loadCVs = () => {
+      if (currentUser?.id) {
+        fetchMyCVs(currentUser.id).then(data => {
+          setCandidates(data || []);
+          if (data && data.length > 0 && !selectedCandidateId) setSelectedCandidateId(data[0].id);
+        }).catch(err => {
+          setError('Lỗi khi tải danh sách CV: ' + err.message);
+        });
+      }
+    };
+
+    loadCVs();
+
+    const handleCVUpdate = () => {
+      loadCVs();
+    };
+    window.addEventListener('cv_database_updated', handleCVUpdate);
+    return () => {
+      window.removeEventListener('cv_database_updated', handleCVUpdate);
+    };
   }, [currentUser]);
 
   function handleFileDrop(e) {
@@ -60,6 +72,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
         const uploadedCandidate = await uploadCV(currentUser.id, fileToUpload);
         cvIdToMatch = uploadedCandidate.id;
         setCandidates(prev => [uploadedCandidate, ...prev]);
+        window.dispatchEvent(new CustomEvent('cv_database_updated'));
       }
 
       if (!cvIdToMatch) {
@@ -231,6 +244,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
 
       setCandidates(prev => [savedCand, ...prev]);
       setIsSubmitting(false);
+      window.dispatchEvent(new CustomEvent('cv_database_updated'));
       alert('✅ Đã lưu bản CV tối ưu vào danh sách hồ sơ của bạn!');
       setStep('result');
     } catch (err) {

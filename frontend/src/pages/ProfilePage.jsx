@@ -73,6 +73,16 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
       setEditName(currentUser.full_name || '');
       setEditPhone(currentUser.phone || '');
     }
+
+    const handleCVUpdate = () => {
+      if (currentUser?.id) {
+        loadProfileData();
+      }
+    };
+    window.addEventListener('cv_database_updated', handleCVUpdate);
+    return () => {
+      window.removeEventListener('cv_database_updated', handleCVUpdate);
+    };
   }, [currentUser?.id]);
 
   async function loadProfileData() {
@@ -111,6 +121,7 @@ export default function ProfilePage({ currentUser, onUpdateUser, onLogout, onNav
       setCvs(prev => prev.filter(c => c.id !== cv.id));
       setToastMsg(`✅ Đã xóa hồ sơ "${cv.full_name}" thành công!`);
       setTimeout(() => setToastMsg(null), 3500);
+      window.dispatchEvent(new CustomEvent('cv_database_updated'));
     } catch (err) {
       alert('Lỗi khi xóa hồ sơ: ' + (err.message || 'Không thể xóa'));
     } finally {

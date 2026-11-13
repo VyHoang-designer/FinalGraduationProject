@@ -124,6 +124,16 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
     }
   }, [isOpen, activeTab, currentUser?.id]);
 
+  useEffect(() => {
+    const handleCVUpdate = () => {
+      loadSavedCVs();
+    };
+    window.addEventListener('cv_database_updated', handleCVUpdate);
+    return () => {
+      window.removeEventListener('cv_database_updated', handleCVUpdate);
+    };
+  }, [currentUser?.id, effectiveUserId]);
+
   // Fetch Jobs list for Quick Apply
   useEffect(() => {
     if (isOpen) {
@@ -303,6 +313,7 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
         
         // Tải lại ngay danh sách hồ sơ để số lượng bên "Hồ sơ đã lưu" cập nhật cộng lên 1 ngay lập tức
         await loadSavedCVs();
+        window.dispatchEvent(new CustomEvent('cv_database_updated'));
 
         const successMsg = '🎉 Đã lưu CV thành công vào tài khoản của bạn!';
         setToastMessage(successMsg);
@@ -361,6 +372,7 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
       await deleteGeneratedCV(id);
       setSavedCVs(prev => prev.filter(c => c.id !== id));
       if (currentCVId === id) setCurrentCVId(null);
+      window.dispatchEvent(new CustomEvent('cv_database_updated'));
     } catch (err) {
       alert('Lỗi xóa CV: ' + err.message);
     }

@@ -770,10 +770,25 @@ def reply_to_inquiry(inquiry_id: int, data: JobInquiryReply, db: Session = Depen
 
 @app.delete("/api/candidates/{candidate_id}")
 def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
-    """Xóa hồ sơ ứng viên khỏi hệ thống."""
+    """Xóa hồ sơ ứng viên khỏi hệ thống và đồng bộ xóa khỏi UserGeneratedCV."""
     candidate = db.query(CandidateCV).filter(CandidateCV.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Không tìm thấy ứng viên.")
+
+    user_id = candidate.user_id
+    cand_name = candidate.full_name
+
+    # Đồng bộ xóa bản UserGeneratedCV tương ứng nếu có
+    if user_id:
+        try:
+            gen_cvs = db.query(UserGeneratedCV).filter(UserGeneratedCV.user_id == user_id).all()
+            for g in gen_cvs:
+                raw = g.raw_input if isinstance(g.raw_input, dict) else {}
+                if raw.get("cand_cv_id") == candidate_id or len(gen_cvs) == 1 or (cand_name and cand_name in (g.title or "")):
+                    db.delete(g)
+        except Exception as e:
+            print(f"[API] Warning deleting UserGeneratedCV during delete_candidate: {e}")
+
     db.delete(candidate)
     db.commit()
     return {"message": "Xóa ứng viên thành công", "id": candidate_id}
@@ -787,6 +802,7 @@ def create_candidate(data: CandidateCVCreate, db: Session = Depends(get_db)):
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
+    sync_candidate_cv_to_user_generated_cv(candidate, db)
     return candidate
 
 def sync_user_generated_cv_to_candidate_cv(gen_cv: UserGeneratedCV, db: Session) -> Optional[CandidateCV]:
@@ -862,9 +878,23 @@ def sync_user_generated_cv_to_candidate_cv(gen_cv: UserGeneratedCV, db: Session)
             f"Dự án:\n" + "\n".join(exp_bullets)
         )
 
-        cand_cv = db.query(CandidateCV).filter(CandidateCV.user_id == gen_cv.user_id).first()
-        if not cand_cv and email:
-            cand_cv = db.query(CandidateCV).filter(CandidateCV.email == email).first()
+        cand_cv = None
+        cand_cv_id = raw_input.get("cand_cv_id")
+        if cand_cv_id:
+            cand_cv = db.query(CandidateCV).filter(CandidateCV.id == cand_cv_id).first()
+
+        if not cand_cv:
+            # Tìm candidate có user_id và full_name trùng khớp
+            cand_cv = db.query(CandidateCV).filter(
+                CandidateCV.user_id == gen_cv.user_id,
+                CandidateCV.full_name == full_name
+            ).first()
+
+        if not cand_cv:
+            # Nếu user chỉ có duy nhất 1 CandidateCV thì liên kết luôn
+            user_candidates = db.query(CandidateCV).filter(CandidateCV.user_id == gen_cv.user_id).all()
+            if len(user_candidates) == 1:
+                cand_cv = user_candidates[0]
 
         if not cand_cv:
             cand_cv = CandidateCV(
@@ -897,9 +927,148 @@ def sync_user_generated_cv_to_candidate_cv(gen_cv: UserGeneratedCV, db: Session)
 
         db.commit()
         db.refresh(cand_cv)
+
+        # Cập nhật cand_cv_id vào raw_input của gen_cv nếu chưa có
+        if raw_input.get("cand_cv_id") != cand_cv.id:
+            raw_input["cand_cv_id"] = cand_cv.id
+            gen_cv.raw_input = dict(raw_input)
+            db.commit()
+
         return cand_cv
     except Exception as e:
         print(f"[API] Warning sync CV to CandidateCV: {e}")
+        db.rollback()
+        return None
+
+
+def sync_candidate_cv_to_user_generated_cv(cand_cv: CandidateCV, db: Session) -> Optional[UserGeneratedCV]:
+    """
+    Tự động đồng bộ một hồ sơ ứng viên (CandidateCV - do upload hoặc parse)
+    sang bảng UserGeneratedCV (AI CV Builder).
+    Đảm bảo:
+    1. Tab 'Hồ sơ đã lưu' trong AI CV Builder hiển thị đầy đủ và số lượng khớp 100%.
+    2. Khi sửa hoặc xem lại trong AI CV Builder có dữ liệu ngay lập tức.
+    """
+    if not cand_cv or not cand_cv.user_id:
+        return None
+
+    try:
+        gen_cvs = db.query(UserGeneratedCV).filter(UserGeneratedCV.user_id == cand_cv.user_id).all()
+        target_gen = None
+        for g in gen_cvs:
+            raw = g.raw_input if isinstance(g.raw_input, dict) else {}
+            if raw.get("cand_cv_id") == cand_cv.id:
+                target_gen = g
+                break
+
+        if not target_gen:
+            for g in gen_cvs:
+                raw = g.raw_input if isinstance(g.raw_input, dict) else {}
+                p_info = raw.get("personal_info", {})
+                if p_info.get("full_name") == cand_cv.full_name or cand_cv.full_name in (g.title or ""):
+                    target_gen = g
+                    break
+            if not target_gen and len(gen_cvs) == 1:
+                target_gen = gen_cvs[0]
+
+        skills_list = cand_cv.parsed_skills if isinstance(cand_cv.parsed_skills, list) else []
+
+        projects = []
+        if isinstance(cand_cv.project_descriptions, list):
+            for i, p in enumerate(cand_cv.project_descriptions):
+                if isinstance(p, dict):
+                    projects.append(p)
+                elif isinstance(p, str):
+                    parts = p.split(":", 1)
+                    p_name = parts[0].strip() if len(parts) > 1 else f"Dự án {i+1}"
+                    bullets = [b.strip() for b in (parts[1] if len(parts) > 1 else parts[0]).split("|") if b.strip()]
+                    projects.append({
+                        "name": p_name,
+                        "role": "Chuyên viên phát triển",
+                        "technologies": ", ".join(skills_list[:4]) if skills_list else "Công nghệ cốt lõi",
+                        "bullet_points": bullets if bullets else [p]
+                    })
+
+        if not projects:
+            projects = [{
+                "name": "Dự án phát triển phần mềm",
+                "role": "Thành viên dự án",
+                "technologies": ", ".join(skills_list[:3]) if skills_list else "Công nghệ chính",
+                "bullet_points": [
+                    "Tham gia xây dựng và triển khai các tính năng chuyên môn đáp ứng yêu cầu người dùng.",
+                    "Đảm bảo chất lượng mã nguồn, tối ưu hóa hiệu năng và phối hợp làm việc nhóm hiệu quả."
+                ]
+            }]
+
+        clean_summary = ""
+        if cand_cv.cv_text:
+            lines = [l.strip() for l in cand_cv.cv_text.splitlines() if l.strip() and not any(l.startswith(prefix) for prefix in ["Họ tên", "Email", "Điện thoại"])]
+            clean_summary = " ".join(lines[:3])
+        if not clean_summary:
+            clean_summary = f"Chuyên viên {cand_cv.full_name} với tinh thần trách nhiệm cao, sở hữu nền tảng chuyên môn vững vàng và {cand_cv.experience_years or 1} năm kinh nghiệm thực tế."
+
+        personal_info = {
+            "full_name": cand_cv.full_name,
+            "email": cand_cv.email or "",
+            "phone": cand_cv.phone or "",
+            "title": "Lập trình viên",
+            "education": cand_cv.education or "",
+            "avatar_url": cand_cv.avatar_url or "",
+            "location": "TP. Hồ Chí Minh"
+        }
+
+        final_data = {
+            "headline": "Lập trình viên",
+            "personal_info": personal_info,
+            "professional_summary": clean_summary,
+            "skills": skills_list,
+            "polished_projects": projects,
+            "education": {
+                "school": cand_cv.education or "Đại học Bách Khoa TP.HCM",
+                "degree": "Kỹ sư / Cử nhân",
+                "major": "Công nghệ Thông tin",
+                "year": "2024",
+                "gpa": "3.2/4.0"
+            }
+        }
+
+        if target_gen:
+            target_raw = target_gen.raw_input if isinstance(target_gen.raw_input, dict) else {}
+            target_raw["cand_cv_id"] = cand_cv.id
+            target_gen.raw_input = target_raw
+            if cand_cv.avatar_url and not target_gen.avatar_url:
+                target_gen.avatar_url = cand_cv.avatar_url
+            if not target_gen.final_data:
+                target_gen.final_data = final_data
+            target_gen.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(target_gen)
+            return target_gen
+        else:
+            new_gen = UserGeneratedCV(
+                user_id=cand_cv.user_id,
+                title=f"Hồ sơ: {cand_cv.full_name}",
+                language="vi",
+                template_id="modern",
+                target_job_title="Lập trình viên",
+                avatar_url=cand_cv.avatar_url,
+                raw_input={
+                    "cand_cv_id": cand_cv.id,
+                    "personal_info": personal_info,
+                    "skills": skills_list,
+                    "projects": projects,
+                    "summary": clean_summary,
+                    "target_job_title": "Lập trình viên"
+                },
+                llm_output=final_data,
+                final_data=final_data,
+            )
+            db.add(new_gen)
+            db.commit()
+            db.refresh(new_gen)
+            return new_gen
+    except Exception as e:
+        print(f"[API] Warning sync CandidateCV to UserGeneratedCV: {e}")
         db.rollback()
         return None
 
@@ -991,6 +1160,10 @@ def upload_cv(user_id: int = Form(...), file: UploadFile = File(...), db: Sessio
         db.add(candidate)
         db.commit()
         db.refresh(candidate)
+
+        # Tự động đồng bộ sang bảng UserGeneratedCV để AI CV Builder thấy ngay lập tức
+        sync_candidate_cv_to_user_generated_cv(candidate, db)
+
         return candidate
 
     except Exception as e:
@@ -2329,7 +2502,13 @@ def save_user_generated_cv(req: CVSaveRequest, db: Session = Depends(get_db)):
 
         # Tự động đồng bộ sang bảng CandidateCV
         if target_cv and target_cv.user_id:
-            sync_user_generated_cv_to_candidate_cv(target_cv, db)
+            synced_cand = sync_user_generated_cv_to_candidate_cv(target_cv, db)
+            if synced_cand:
+                target_raw = target_cv.raw_input if isinstance(target_cv.raw_input, dict) else {}
+                if target_raw.get("cand_cv_id") != synced_cand.id:
+                    target_raw["cand_cv_id"] = synced_cand.id
+                    target_cv.raw_input = dict(target_raw)
+                    db.commit()
 
         msg = "Cập nhật CV thành công" if existing_cv else "Lưu CV mới thành công"
         return {"success": True, "message": msg, "cv_id": target_cv.id, "cv": target_cv}
@@ -2341,7 +2520,20 @@ def save_user_generated_cv(req: CVSaveRequest, db: Session = Depends(get_db)):
 
 @app.get("/api/cv-builder/my-cvs")
 def get_user_generated_cvs(user_id: Optional[int] = None, db: Session = Depends(get_db)):
-    """Lấy danh sách tất cả các bản CV do người dùng tạo."""
+    """Lấy danh sách tất cả các bản CV do người dùng tạo, tự động đồng bộ từ CandidateCV nếu có."""
+    if user_id:
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            user_email = user.email if user else None
+            conditions = [CandidateCV.user_id == user_id]
+            if user_email:
+                conditions.append(CandidateCV.email == user_email)
+            cand_cvs = db.query(CandidateCV).filter(or_(*conditions)).all()
+            for cand in cand_cvs:
+                sync_candidate_cv_to_user_generated_cv(cand, db)
+        except Exception as e:
+            print(f"[API] Error auto-syncing CandidateCV in get_user_generated_cvs: {e}")
+
     query = db.query(UserGeneratedCV)
     if user_id:
         query = query.filter(UserGeneratedCV.user_id == user_id)
@@ -2360,10 +2552,30 @@ def get_user_generated_cv_detail(cv_id: int, db: Session = Depends(get_db)):
 
 @app.delete("/api/cv-builder/{cv_id}")
 def delete_user_generated_cv(cv_id: int, db: Session = Depends(get_db)):
-    """Xóa 1 bản CV."""
+    """Xóa 1 bản CV và đồng bộ xóa khỏi CandidateCV."""
     cv = db.query(UserGeneratedCV).filter(UserGeneratedCV.id == cv_id).first()
     if not cv:
         raise HTTPException(status_code=404, detail="Không tìm thấy CV")
+
+    raw = cv.raw_input if isinstance(cv.raw_input, dict) else {}
+    cand_cv_id = raw.get("cand_cv_id")
+    user_id = cv.user_id
+    cv_title = cv.title or ""
+
+    try:
+        if cand_cv_id:
+            cand = db.query(CandidateCV).filter(CandidateCV.id == cand_cv_id).first()
+            if cand:
+                db.delete(cand)
+        elif user_id:
+            cands = db.query(CandidateCV).filter(CandidateCV.user_id == user_id).all()
+            for c in cands:
+                if c.full_name in cv_title or cv_title in c.full_name or len(cands) == 1:
+                    db.delete(c)
+                    break
+    except Exception as e:
+        print(f"[API] Warning deleting CandidateCV during delete_user_generated_cv: {e}")
+
     db.delete(cv)
     db.commit()
     return {"success": True, "message": "Đã xóa CV thành công"}

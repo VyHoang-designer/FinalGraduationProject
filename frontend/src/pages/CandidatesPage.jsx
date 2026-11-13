@@ -157,6 +157,7 @@ export default function CandidatesPage({ onNavigate, globalSearchTerm }) {
       await deleteCandidate(candidate.id);
       setCandidates(prev => prev.filter(c => c.id !== candidate.id));
       showToast(`🗑️ Đã xóa ứng viên "${candidate.full_name}"`);
+      window.dispatchEvent(new CustomEvent('cv_database_updated'));
     } catch (err) {
       showToast(`❌ Lỗi xóa ứng viên: ${err.message}`, 'error');
     }
@@ -197,6 +198,7 @@ export default function CandidatesPage({ onNavigate, globalSearchTerm }) {
         setIsAddModalOpen(false);
         setUploadFile(null);
         await loadData();
+        window.dispatchEvent(new CustomEvent('cv_database_updated'));
       } catch (err) {
         showToast(`❌ Lỗi tải lên: ${err.message}`, 'error');
       } finally {
