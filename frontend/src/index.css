@@ -6096,7 +6096,19 @@ body {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 0;
+    margin: 0mm !important;
+  }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   body * {
@@ -6105,18 +6117,23 @@ body {
 
   .cv-modal-backdrop,
   .cv-modal-container {
-    position: static;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    width: 100%;
-    height: auto;
+    position: static !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .cv-modal-topbar,
   .cv-editor-column,
   .cv-preview-header-bar,
-  .cv-modal-close-btn {
+  .cv-modal-close-btn,
+  .cv-modal-tabs {
     display: none !important;
   }
 
@@ -6127,25 +6144,88 @@ body {
     display: block !important;
     background: transparent !important;
     padding: 0 !important;
-    overflow: visible !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
   }
 
   .cv-a4-paper {
     visibility: visible !important;
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
     min-height: 297mm !important;
+    overflow: hidden !important;
     transform: none !important;
     box-shadow: none !important;
     margin: 0 !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    break-inside: avoid !important;
+    box-sizing: border-box !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .cv-a4-paper * {
     visibility: visible !important;
   }
+
+  /* Đảm bảo nội dung mẫu 2 cột (Modern) vừa trọn 1 trang */
+  .cv-modern-grid {
+    height: 297mm !important;
+    max-height: 297mm !important;
+    min-height: 297mm !important;
+    overflow: hidden !important;
+  }
+
+  .cv-modern-sidebar {
+    padding: 16mm 6mm 12mm 6mm !important;
+    gap: 12px !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    box-sizing: border-box !important;
+  }
+
+  .cv-modern-main {
+    padding: 16mm 8mm 12mm 8mm !important;
+    gap: 12px !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Đảm bảo mẫu 1 cột (Classic) vừa trọn 1 trang */
+  .cv-classic-layout {
+    padding: 14mm 14mm !important;
+    gap: 10px !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  .cv-paper-project-item {
+    margin-bottom: 6px !important;
+  }
+
+  .cv-project-bullets li {
+    margin-bottom: 2px !important;
+    line-height: 1.35 !important;
+  }
+
+  .cv-summary-text {
+    line-height: 1.4 !important;
+    margin: 4px 0 !important;
+  }
 }
+
 
 /* ==============================================================================
    AI EVALUATION & APPLY CONFIRMATION MODAL

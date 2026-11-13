@@ -87,6 +87,18 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
   // Saved CVs List
   const [savedCVs, setSavedCVs] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
+
+  // Fallback lấy userId từ localStorage nếu prop currentUser chưa kịp truyền
+  const effectiveUserId = currentUser?.id || (() => {
+    try {
+      const saved = localStorage.getItem('aimatcher_current_user');
+      return saved ? JSON.parse(saved)?.id : null;
+    } catch {
+      return null;
+    }
+  })();
 
   // Jobs for applying
   const [availableJobs, setAvailableJobs] = useState([]);
@@ -105,12 +117,12 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
   const [zoomLevel, setZoomLevel] = useState(1);
   const printAreaRef = useRef(null);
 
-  // Load Saved CVs when switching to saved tab
+  // Tải danh sách CV đã lưu ngay khi mở modal hoặc khi tab/user thay đổi
   useEffect(() => {
-    if (activeTab === 'saved_cvs' && currentUser?.id) {
+    if (isOpen) {
       loadSavedCVs();
     }
-  }, [activeTab, currentUser]);
+  }, [isOpen, activeTab, currentUser?.id]);
 
   // Fetch Jobs list for Quick Apply
   useEffect(() => {
@@ -122,12 +134,13 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
   async function loadSavedCVs() {
     setLoadingSaved(true);
     try {
-      const res = await fetchMyGeneratedCVs(currentUser?.id);
+      const uId = currentUser?.id || effectiveUserId;
+      const res = await fetchMyGeneratedCVs(uId);
       if (res?.success) {
         setSavedCVs(res.cvs || []);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Lỗi khi tải danh sách CV đã lưu:', e);
     } finally {
       setLoadingSaved(false);
     }
@@ -240,12 +253,29 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
   }
 
   // Save CV
-  async function handleSaveCV(silent = false) {
-    if (!generatedData) return null;
+  async function handleSaveCV(isSilent = false) {
+    const silent = typeof isSilent === 'boolean' ? isSilent : false;
+    
+    // Chuẩn bị dữ liệu nếu chưa qua bước LLM
+    const finalDataToSave = generatedData || {
+      headline: targetJobTitle,
+      professional_summary: rawSummary || `${personalInfo.full_name || 'Ứng viên'} - ${targetJobTitle}`,
+      skills_categorized: { 'Kỹ năng': skills },
+      polished_projects: projects.map(p => ({
+        name: p.name,
+        role: p.my_role,
+        technologies: p.technologies,
+        bullet_points: [p.tasks, p.result].filter(Boolean)
+      })),
+      polished_experiences: experiences
+    };
+
+    setIsSaving(true);
     try {
+      const uId = currentUser?.id ? Number(currentUser.id) : (effectiveUserId ? Number(effectiveUserId) : null);
       const payload = {
-        user_id: currentUser?.id ? Number(currentUser.id) : null,
-        title: cvTitle || 'Bản CV Mới',
+        user_id: uId,
+        title: cvTitle || `CV - ${personalInfo.full_name || targetJobTitle}`,
         language: cvLanguage,
         template_id: templateId,
         target_job_title: targetJobTitle,
@@ -258,9 +288,9 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
           projects,
           experiences
         },
-        llm_output: generatedData,
+        llm_output: finalDataToSave,
         final_data: {
-          ...generatedData,
+          ...finalDataToSave,
           personal_info: personalInfo,
           template_id: templateId,
           theme_color: colorTheme.primary
@@ -270,17 +300,31 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
       const res = await saveGeneratedCV(payload);
       if (res?.success) {
         setCurrentCVId(res.cv_id);
+        
+        // Tải lại ngay danh sách hồ sơ để số lượng bên "Hồ sơ đã lưu" cập nhật cộng lên 1 ngay lập tức
+        await loadSavedCVs();
+
+        const successMsg = '🎉 Đã lưu CV thành công vào tài khoản của bạn!';
+        setToastMessage(successMsg);
+        setTimeout(() => setToastMessage(null), 4000);
+
         if (!silent) {
-          alert('🎉 Đã lưu CV thành công vào tài khoản của bạn!');
+          alert(successMsg);
         }
-        loadSavedCVs();
         return res.cv_id;
+      } else {
+        throw new Error(res?.message || 'Không thể lưu CV');
       }
     } catch (err) {
-      if (!silent) alert('Lỗi khi lưu CV: ' + err.message);
+      console.error('Lỗi khi lưu CV:', err);
+      const errorMsg = 'Lỗi khi lưu CV: ' + (err.message || 'Không xác định');
+      setToastMessage('❌ ' + errorMsg);
+      setTimeout(() => setToastMessage(null), 5000);
+      if (!silent) alert(errorMsg);
       throw err;
+    } finally {
+      setIsSaving(false);
     }
-    return null;
   }
 
   // Load a Saved CV into Editor
@@ -383,16 +427,177 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
     }
   }
 
-  // Print / Export PDF
+  // Print / Export PDF A4 chuẩn đúng 1 trang cách ly
   function handlePrintPDF() {
-    window.print();
+    const printElement = printAreaRef.current;
+    if (!printElement) {
+      window.print();
+      return;
+    }
+
+    // 1. Tạo iframe ẩn chuyên dụng để in tách biệt hoàn toàn khỏi cây DOM của ứng dụng
+    let iframe = document.getElementById('cv-print-iframe');
+    if (iframe) {
+      try { document.body.removeChild(iframe); } catch {}
+    }
+    iframe = document.createElement('iframe');
+    iframe.id = 'cv-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    // 2. Clone phần tử trang CV A4 và gỡ bỏ scale preview
+    const clone = printElement.cloneNode(true);
+    clone.style.transform = 'none';
+    clone.style.boxShadow = 'none';
+    clone.style.margin = '0';
+
+    // 3. Lấy toàn bộ styles từ document hiện tại
+    let styles = '';
+    const styleTags = document.querySelectorAll('style, link[rel="stylesheet"]');
+    styleTags.forEach(tag => {
+      styles += tag.outerHTML;
+    });
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${cvTitle || personalInfo.full_name || 'CV'}</title>
+          ${styles}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 0mm !important;
+            }
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 210mm !important;
+              height: 297mm !important;
+              max-height: 297mm !important;
+              overflow: hidden !important;
+              background: #ffffff !important;
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+            }
+            .cv-a4-paper {
+              width: 210mm !important;
+              height: 297mm !important;
+              max-height: 297mm !important;
+              min-height: 297mm !important;
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              box-shadow: none !important;
+              transform: none !important;
+              page-break-after: avoid !important;
+              page-break-inside: avoid !important;
+              break-after: avoid !important;
+              break-inside: avoid !important;
+              box-sizing: border-box !important;
+            }
+            /* Đảm bảo layout 1 trang chuẩn không bị tràn qua trang 2 */
+            .cv-modern-grid {
+              height: 297mm !important;
+              max-height: 297mm !important;
+              min-height: 297mm !important;
+              overflow: hidden !important;
+            }
+            .cv-modern-sidebar {
+              padding: 16mm 6mm 12mm 6mm !important;
+              gap: 12px !important;
+              height: 297mm !important;
+              max-height: 297mm !important;
+              box-sizing: border-box !important;
+            }
+            .cv-modern-main {
+              padding: 16mm 8mm 12mm 8mm !important;
+              gap: 12px !important;
+              height: 297mm !important;
+              max-height: 297mm !important;
+              box-sizing: border-box !important;
+            }
+            .cv-classic-layout {
+              padding: 14mm 14mm !important;
+              gap: 10px !important;
+              height: 297mm !important;
+              max-height: 297mm !important;
+              overflow: hidden !important;
+              box-sizing: border-box !important;
+            }
+            .cv-paper-project-item {
+              margin-bottom: 6px !important;
+            }
+            .cv-project-bullets li {
+              margin-bottom: 2px !important;
+              line-height: 1.35 !important;
+            }
+            .cv-summary-text {
+              line-height: 1.4 !important;
+              margin: 4px 0 !important;
+            }
+          </style>
+        </head>
+        <body>
+          ${clone.outerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    // 4. In trực tiếp qua iframe
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.error('Lỗi khi in qua iframe:', err);
+        window.print();
+      }
+    }, 500);
   }
 
   if (!isOpen) return null;
 
   return (
     <div className="cv-modal-backdrop">
-      <div className="cv-modal-container">
+      <div className="cv-modal-container" style={{ position: 'relative' }}>
+        {/* TOAST THÔNG BÁO NỔI */}
+        {toastMessage && (
+          <div style={{
+            position: 'absolute',
+            top: '64px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: toastMessage.includes('❌') ? '#ef4444' : '#10b981',
+            color: '#ffffff',
+            padding: '10px 24px',
+            borderRadius: '10px',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            animation: 'cvFadeIn 0.2s ease-out'
+          }}>
+            <span>{toastMessage}</span>
+          </div>
+        )}
         
         {/* MODAL TOPBAR */}
         <header className="cv-modal-topbar">
@@ -425,13 +630,18 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
           <div className="cv-modal-topbar__right">
             {activeTab === 'wizard' && activeStep === 4 && (
               <>
-                <button className="cv-btn cv-btn--outline" onClick={handleSaveCV} title="Lưu phiên bản vào tài khoản">
+                <button 
+                  className="cv-btn cv-btn--outline" 
+                  onClick={() => handleSaveCV(false)} 
+                  title="Lưu phiên bản vào tài khoản"
+                  disabled={isSaving}
+                >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                     <polyline points="17 21 17 13 7 13 7 21"/>
                     <polyline points="7 3 7 8 15 8"/>
                   </svg>
-                  Lưu CV
+                  {isSaving ? 'Đang lưu...' : 'Lưu CV'}
                 </button>
 
                 <button className="cv-btn cv-btn--primary" onClick={handlePrintPDF} title="In hoặc Tải về PDF A4 chuẩn">

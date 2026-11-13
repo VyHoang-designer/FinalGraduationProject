@@ -256,3 +256,4 @@ def _smart_fallback_optimize_cv(
             "Đã biên tập lại mô tả dự án theo phương pháp STAR với các động từ hành động mạnh mẽ."
         ]
     }
+
