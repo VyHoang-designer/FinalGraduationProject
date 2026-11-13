@@ -464,7 +464,50 @@ class JobInquiryResponse(BaseModel):
         from_attributes = True
 
 
+class ConfirmedGapItem(BaseModel):
+    skill: str
+    user_note: Optional[str] = None
+    level: Optional[str] = "basic"
+
+
+class CVOptimizeForJDRequest(BaseModel):
+    jd_id: int
+    user_confirmed_gaps: Optional[list[ConfirmedGapItem]] = []
+    custom_instructions: Optional[str] = None
+
+
+class CVOptimizeForJDResponse(BaseModel):
+    success: bool
+    original_cv_id: int
+    jd_id: int
+    job_title: str
+    original_match_score: float
+    original_match_level: str
+    predicted_match_score: float
+    predicted_match_level: str
+    optimized_summary: str
+    optimized_skills: list[str]
+    optimized_skills_categorized: Optional[dict[str, list[str]]] = None
+    optimized_projects: list[dict[str, Any]]
+    optimized_experiences: Optional[list[dict[str, Any]]] = None
+    added_keywords: list[str]
+    changes_summary: list[str]
+    optimized_cv_text: str
+
+
+class CVSaveOptimizedRequest(BaseModel):
+    jd_id: int
+    title: Optional[str] = None
+    optimized_summary: str
+    optimized_skills: list[str]
+    optimized_projects: list[dict[str, Any]]
+    optimized_experiences: Optional[list[dict[str, Any]]] = None
+    optimized_cv_text: Optional[str] = None
+    save_as_new: bool = True  # True: tạo bản CandidateCV mới; False: cập nhật bản hiện tại
+
+
 AssignJobRequest.model_rebuild()
+
 
 
 

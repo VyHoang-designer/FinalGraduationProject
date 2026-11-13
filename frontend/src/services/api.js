@@ -159,6 +159,22 @@ export async function createCandidate(data) {
   });
 }
 
+// AI CV OPTIMIZER (Tối ưu hóa CV theo JD mục tiêu)
+export async function optimizeCVForJD(candidateId, data) {
+  return request(`/candidates/${candidateId}/optimize-for-jd`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function saveOptimizedCV(candidateId, data) {
+  return request(`/candidates/${candidateId}/save-optimized-cv`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+
 // ==============================================================================
 // JOBS
 // ==============================================================================
