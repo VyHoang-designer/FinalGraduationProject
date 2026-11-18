@@ -1,26 +1,20 @@
 // ==============================================================================
 // FILE: frontend/src/services/api.js
-// MÔ TẢ: API Service Layer - Giao tiếp với FastAPI Backend
+// MÔ TẢ: API Service Layer - Giao tiếp với FastAPI Backend (Local Cục Bộ)
 // ==============================================================================
 
-// Cấu hình URL Backend:
-// - Khi chạy trên máy cá nhân (localhost / 127.0.0.1) -> Dùng http://localhost:8000
-// - Khi deploy lên GitHub Pages / máy khác -> Dùng URL server online (Render, Railway, ngrok...)
-const DEFAULT_ONLINE_BACKEND = 'https://finalgraduationproject.onrender.com';
+// Cấu hình URL Backend cục bộ (localhost:8000)
+const DEFAULT_LOCAL_BACKEND = 'http://localhost:8000';
 
 const getBackendOrigin = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
   if (typeof window !== 'undefined') {
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (isLocalhost) {
-      return 'http://localhost:8000';
-    }
     const customUrl = localStorage.getItem('aimatcher_backend_url');
     if (customUrl) return customUrl;
   }
-  return DEFAULT_ONLINE_BACKEND;
+  return DEFAULT_LOCAL_BACKEND;
 };
 
 const BACKEND_ORIGIN = getBackendOrigin().replace(/\/+$/, '');

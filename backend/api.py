@@ -162,7 +162,7 @@ def trigger_seed(force: bool = False):
 @app.post("/api/admin/sync-database")
 def sync_database(data: Dict[str, Any], db: Session = Depends(get_db)):
     """
-    Nhận toàn bộ dữ liệu từ database cục bộ (Local PostgreSQL) và ghi đè đồng bộ lên Render.
+    Nhận toàn bộ dữ liệu từ database cục bộ để phục hồi hoặc đồng bộ dữ liệu.
     """
     from models import User, Company, JobDescription, CandidateCV, MatchResult, JobInquiry, UserGeneratedCV
 
@@ -225,7 +225,7 @@ def sync_database(data: Dict[str, Any], db: Session = Depends(get_db)):
 
         return {
             "success": True,
-            "message": "Đã đồng bộ toàn bộ dữ liệu từ local sang Render thành công!",
+            "message": "Đã đồng bộ toàn bộ dữ liệu thành công!",
             "summary": summary,
         }
     except Exception as e:

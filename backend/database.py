@@ -20,7 +20,7 @@ if not DATABASE_URL:
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "matching.db")
     DATABASE_URL = f"sqlite:///{db_path}"
 
-# Render PostgreSQL URL starts with postgres://, SQLAlchemy expects postgresql://
+# Chuẩn hóa URL PostgreSQL nếu bắt đầu bằng postgres:// (SQLAlchemy yêu cầu postgresql://)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
