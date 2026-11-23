@@ -172,6 +172,7 @@ class ApplyJobRequest(BaseModel):
     skill_details: Optional[list[dict]] = None
     pillar_scores: Optional[dict] = None
     all_criteria_details: Optional[dict] = None
+    audit_trail: Optional[dict] = None
 
 
 # ==============================================================================
@@ -478,9 +479,69 @@ class ConfirmedGapItem(BaseModel):
     level: Optional[str] = "basic"
 
 
+class DeclaredEvidenceItem(BaseModel):
+    """Bằng chứng chi tiết cho khoảng trống tiêu chí (Micro-Evidence)."""
+    pillar: str = "skills"  # 'skills' | 'experience' | 'projects' | 'education'
+    item_name: str
+    context_type: str = "academic_project"  # 'academic_project' | 'company_work' | 'freelance' | 'self_study' | 'certification'
+    description: str
+    reference_link: Optional[str] = None
+    duration_or_period: Optional[str] = None
+    organization: Optional[str] = None
+
+
+class QuickChallengeQuestion(BaseModel):
+    """Câu hỏi kiểm chứng kỹ thuật trắc nghiệm nhanh do LLM sinh ra."""
+    id: str
+    criterion_name: str
+    pillar: str = "skills"
+    question: str
+    options: list[str]
+    correct_index: int = 0
+    explanation: Optional[str] = None
+
+
+class QuickChallengeAnswer(BaseModel):
+    """Ứng viên gửi câu trả lời bài kiểm chứng."""
+    question_id: str
+    selected_index: int
+
+
+class EvidenceAuditItem(BaseModel):
+    """Kết quả LLM kiểm định tính xác thực của từng bằng chứng."""
+    criterion_name: str
+    pillar: str
+    credibility_score: float  # 0.0 -> 1.0
+    verdict: str  # 'verified_high' | 'verified_plausible' | 'partially_accepted' | 'insufficient'
+    audit_reason: str
+    awarded_level: int = 2  # 0..4
+    evidence_quote: Optional[str] = None
+
+
+class AuditAndChallengeGenerateRequest(BaseModel):
+    """Request thẩm định bằng chứng và sinh bài kiểm chứng nhanh."""
+    cv_id: int
+    jd_id: int
+    declared_evidences: list[DeclaredEvidenceItem]
+    custom_instructions: Optional[str] = None
+
+
+class AuditAndChallengeGenerateResponse(BaseModel):
+    """Response chứa kết quả thẩm định sơ bộ và 2 câu hỏi Quick Tech Check."""
+    cv_id: int
+    jd_id: int
+    audited_evidences: list[EvidenceAuditItem]
+    challenge_questions: list[QuickChallengeQuestion]
+    overall_credibility: float
+    can_proceed: bool
+    audit_notes: Optional[str] = None
+
+
 class CVOptimizeForJDRequest(BaseModel):
     jd_id: int
     user_confirmed_gaps: Optional[list[ConfirmedGapItem]] = []
+    declared_evidences: Optional[list[DeclaredEvidenceItem]] = []
+    challenge_answers: Optional[list[QuickChallengeAnswer]] = []
     custom_instructions: Optional[str] = None
 
 
@@ -493,6 +554,8 @@ class CVOptimizeForJDResponse(BaseModel):
     original_match_level: str
     predicted_match_score: float
     predicted_match_level: str
+    original_pillar_scores: Optional[dict] = None
+    verified_pillar_scores: Optional[dict] = None
     optimized_summary: str
     optimized_skills: list[str]
     optimized_skills_categorized: Optional[dict[str, list[str]]] = None
@@ -501,6 +564,8 @@ class CVOptimizeForJDResponse(BaseModel):
     added_keywords: list[str]
     changes_summary: list[str]
     optimized_cv_text: str
+    audit_trail: Optional[dict] = None
+    interview_probe_kit: Optional[list[str]] = None
 
 
 class CVSaveOptimizedRequest(BaseModel):
@@ -511,6 +576,7 @@ class CVSaveOptimizedRequest(BaseModel):
     optimized_projects: list[dict[str, Any]]
     optimized_experiences: Optional[list[dict[str, Any]]] = None
     optimized_cv_text: Optional[str] = None
+    audit_trail: Optional[dict] = None
     save_as_new: bool = True  # True: tạo bản CandidateCV mới; False: cập nhật bản hiện tại
 
 

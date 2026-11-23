@@ -153,7 +153,14 @@ export async function createCandidate(data) {
   });
 }
 
-// AI CV OPTIMIZER (Tối ưu hóa CV theo JD mục tiêu)
+// AI CV OPTIMIZER & VERIFICATION (Tối ưu hóa CV theo JD mục tiêu & Thẩm định Minh bạch)
+export async function auditAndGenerateChallenge(candidateId, data) {
+  return request(`/candidates/${candidateId}/audit-and-challenge`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function optimizeCVForJD(candidateId, data) {
   return request(`/candidates/${candidateId}/optimize-for-jd`, {
     method: 'POST',

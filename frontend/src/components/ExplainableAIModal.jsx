@@ -162,6 +162,91 @@ export default function ExplainableAIModal({ result, onClose }) {
             </div>
           </div>
           
+          {/* 🛡️ Recruiter Audit Trail (Nếu ứng viên đã qua luồng tối ưu & kiểm định) */}
+          {features.audit_trail && (
+            <div style={{
+              background: '#ffffff',
+              border: '1.5px solid #c084fc',
+              borderRadius: '12px',
+              padding: '18px 20px',
+              margin: '20px 0',
+              boxShadow: '0 4px 12px rgba(192, 132, 252, 0.12)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', borderBottom: '1px solid #f3e8ff', paddingBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '1.2rem' }}>🛡️</span>
+                  <span style={{ fontWeight: 800, color: '#6d28d9', fontSize: '0.95rem' }}>
+                    NHẬT KÝ THẨM ĐỊNH NĂNG LỰC BỔ SUNG (RECRUITER AUDIT TRAIL)
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ background: '#f5f3ff', color: '#6d28d9', border: '1px solid #ddd6fe', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
+                    Độ tin cậy: {Math.round((features.audit_trail.overall_credibility || 0.8) * 100)}%
+                  </span>
+                  <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
+                    {features.audit_trail.challenge_results?.summary || 'Đã kiểm tra kỹ thuật'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Bảng so sánh Điểm Gốc vs Điểm Xác Thực */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: '#faf5ff', padding: '10px 14px', borderRadius: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.85rem', color: '#6b21a8' }}>
+                  <strong>Điểm gốc ban đầu:</strong> {features.audit_trail.original_match_score}% ({features.audit_trail.original_match_level || 'Chưa phù hợp'})
+                </span>
+                <span style={{ color: '#c084fc', fontWeight: 800 }}>➔</span>
+                <span style={{ fontSize: '0.85rem', color: '#15803d' }}>
+                  <strong>Sau khi thẩm định bằng chứng:</strong> {features.audit_trail.verified_match_score || score}% ({features.audit_trail.verified_match_level || result.match_level})
+                </span>
+              </div>
+
+              {/* Chi tiết từng bằng chứng đã khai báo */}
+              {features.audit_trail.audited_evidences && features.audit_trail.audited_evidences.length > 0 && (
+                <div style={{ marginBottom: '14px' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+                    🔍 Bằng chứng ứng viên đã cung cấp & Kết quả thẩm định:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {features.audit_trail.audited_evidences.map((ev, eidx) => (
+                      <div key={eidx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ fontWeight: 700, color: '#1e293b', fontSize: '0.88rem' }}>
+                            {ev.pillar === 'skills' ? '⚡' : (ev.pillar === 'experience' ? '💼' : (ev.pillar === 'projects' ? '🚀' : '🎓'))} {ev.criterion_name}
+                          </span>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: ev.verdict === 'verified_high' ? '#15803d' : '#4338ca', background: ev.verdict === 'verified_high' ? '#dcfce7' : '#e0e7ff', padding: '2px 8px', borderRadius: '4px' }}>
+                            {ev.verdict === 'verified_high' ? '✓ Xác thực cao' : '✓ Hợp lý'} ({Math.round(ev.credibility_score * 100)}%)
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: '#475569', marginBottom: '4px' }}>
+                          <strong>Thẩm định:</strong> {ev.audit_reason}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                          " {ev.evidence_quote} "
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Gói câu hỏi phỏng vấn kiểm chứng cho HR */}
+              {features.audit_trail.interview_probe_kit && features.audit_trail.interview_probe_kit.length > 0 && (
+                <div style={{ background: '#fefce8', border: '1px solid #fef08a', borderRadius: '8px', padding: '12px 14px' }}>
+                  <div style={{ fontWeight: 700, color: '#854d0e', fontSize: '0.85rem', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>💡</span> Bộ câu hỏi phỏng vấn kiểm chứng do AI gợi ý cho Người phỏng vấn:
+                  </div>
+                  <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                    {features.audit_trail.interview_probe_kit.map((q, qidx) => (
+                      <li key={qidx} style={{ fontSize: '0.82rem', color: '#713f12', marginBottom: '4px', lineHeight: 1.4 }}>
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 🤖 Unified Multi-Criteria Assessment (Gemini LLM) */}
           <UnifiedCriteriaAssessment 
             result={result} 

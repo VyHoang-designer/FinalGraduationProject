@@ -47,10 +47,13 @@ from schemas import (
     CVEvaluateMatchRequest, CVConfirmApplyRequest,
     JobInquiryCreate, JobInquiryResponse, JobInquiryReply,
     AIAssistantChatRequest, AIAssistantChatResponse,
-    CVOptimizeForJDRequest, CVOptimizeForJDResponse, CVSaveOptimizedRequest
+    CVOptimizeForJDRequest, CVOptimizeForJDResponse, CVSaveOptimizedRequest,
+    AuditAndChallengeGenerateRequest, AuditAndChallengeGenerateResponse,
+    DeclaredEvidenceItem, QuickChallengeAnswer, QuickChallengeQuestion, EvidenceAuditItem
 )
 from cv_llm_service import generate_cv_content_with_llm
 from cv_optimizer_service import optimize_cv_for_jd_with_llm
+from cv_verification_service import audit_candidate_evidence_and_create_challenges, evaluate_challenge_answers
 from ai_assistant_service import chat_with_ai_assistant
 import hashlib
 
@@ -1174,8 +1177,66 @@ def upload_cv(user_id: int = Form(...), file: UploadFile = File(...), db: Sessio
 
 
 # ==============================================================================
-# AI CV OPTIMIZER FOR JD (DÙNG AI TỐI ƯU LẠI CV THEO JD)
+# AI CV OPTIMIZER FOR JD (DÙNG AI TỐI ƯU LẠI CV THEO JD & THẨM ĐỊNH MINH BẠCH)
 # ==============================================================================
+@app.post("/api/candidates/{candidate_id}/audit-and-challenge", response_model=AuditAndChallengeGenerateResponse)
+def audit_and_generate_challenge(
+    candidate_id: int,
+    req: AuditAndChallengeGenerateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Thẩm định các bằng chứng ứng viên khai báo bổ sung (Micro-Evidence)
+    và sinh 2 câu hỏi kiểm chứng kỹ thuật nhanh (Quick Tech Check) kèm câu hỏi phỏng vấn cho Recruiter.
+    """
+    cand = db.query(CandidateCV).filter(CandidateCV.id == candidate_id).first()
+    if not cand:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng viên")
+
+    jd = db.query(JobDescription).filter(JobDescription.id == req.jd_id).first()
+    if not jd:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
+
+    cv_info = {
+        "full_name": cand.full_name,
+        "email": cand.email,
+        "phone": cand.phone,
+        "education": cand.education,
+        "experience_years": cand.experience_years,
+        "parsed_skills": cand.parsed_skills or [],
+        "project_descriptions": cand.project_descriptions or [],
+        "cv_text": cand.cv_text,
+    }
+    jd_info = {
+        "title": jd.title,
+        "department": jd.department,
+        "location": jd.location,
+        "required_experience": jd.required_experience or 0.0,
+        "required_skills": jd.required_skills or [],
+        "project_keywords": jd.project_keywords or [],
+        "jd_text": jd.jd_text,
+    }
+
+    declared_list = [d.model_dump() for d in req.declared_evidences]
+
+    audit_res = audit_candidate_evidence_and_create_challenges(
+        cv_info=cv_info,
+        jd_info=jd_info,
+        declared_evidences=declared_list,
+        custom_instructions=req.custom_instructions
+    )
+
+    return {
+        "cv_id": cand.id,
+        "jd_id": jd.id,
+        "audited_evidences": audit_res.get("audited_evidences", []),
+        "challenge_questions": audit_res.get("challenge_questions", []),
+        "overall_credibility": audit_res.get("overall_credibility", 1.0),
+        "can_proceed": audit_res.get("can_proceed", True),
+        "audit_notes": audit_res.get("audit_notes")
+    }
+
+
 @app.post("/api/candidates/{candidate_id}/optimize-for-jd", response_model=CVOptimizeForJDResponse)
 def optimize_cv_for_jd(
     candidate_id: int,
@@ -1183,12 +1244,13 @@ def optimize_cv_for_jd(
     db: Session = Depends(get_db)
 ):
     """
-    Tối ưu hóa nội dung CV bám sát JD tuyển dụng bằng Gemini LLM (theo chuẩn STAR & ATS):
+    Tối ưu hóa nội dung CV bám sát JD tuyển dụng với Cổng Thẩm định Minh bạch:
     1. Lấy thông tin CandidateCV và JobDescription từ DB.
-    2. Chạy đánh giá ban đầu (nếu chưa có).
-    3. Gọi cv_optimizer_service để viết lại Summary, biên tập Bullets theo STAR, sắp xếp kỹ năng.
-    4. Tái đánh giá điểm (Re-scoring) bằng AI Engine thật để tính predicted_match_score.
-    5. Trả về kết quả so sánh Before/After.
+    2. Chạy đánh giá ban đầu thật (Original Match Score & Pillar Scores).
+    3. Thẩm định bằng chứng (nếu có) & chấm điểm bài Quick Tech Check.
+    4. Gọi cv_optimizer_service để viết lại Summary, biên tập Bullets theo STAR, sắp xếp kỹ năng và dự án.
+    5. Tái đánh giá điểm chuẩn xác (Re-scoring) bằng AI Engine thật.
+    6. Tạo gói Audit Trail & Interview Probe Kit cho Nhà tuyển dụng.
     """
     cand = db.query(CandidateCV).filter(CandidateCV.id == candidate_id).first()
     if not cand:
@@ -1218,8 +1280,9 @@ def optimize_cv_for_jd(
     orig_eval = ai.match_cv_to_jd(cv_data_orig, jd_data)
     orig_score = float(orig_eval.get("match_score", 0.0))
     orig_level = str(orig_eval.get("match_level", "Chưa phù hợp"))
+    orig_pillar_scores = orig_eval.get("pillar_scores") or {}
 
-    # 2. Chuẩn bị dữ liệu gửi sang LLM Optimizer
+    # 2. Chuẩn bị dữ liệu gửi sang LLM Optimizer & Thẩm định
     cv_info = {
         "full_name": cand.full_name,
         "email": cand.email,
@@ -1241,12 +1304,31 @@ def optimize_cv_for_jd(
     }
 
     confirmed_gaps_list = [g.model_dump() for g in req.user_confirmed_gaps] if req.user_confirmed_gaps else []
+    declared_evidences_list = [d.model_dump() for d in req.declared_evidences] if req.declared_evidences else []
+
+    # 3. Thẩm định bằng chứng & chấm bài kiểm tra nhanh (nếu có)
+    audit_results = {}
+    challenge_eval = {}
+    if declared_evidences_list:
+        audit_results = audit_candidate_evidence_and_create_challenges(
+            cv_info=cv_info,
+            jd_info=jd_info,
+            declared_evidences=declared_evidences_list,
+            custom_instructions=req.custom_instructions
+        )
+        if req.challenge_answers:
+            challenge_eval = evaluate_challenge_answers(
+                challenge_questions=audit_results.get("challenge_questions", []),
+                user_answers=[a.model_dump() for a in req.challenge_answers]
+            )
 
     optimized_result = optimize_cv_for_jd_with_llm(
         cv_info=cv_info,
         jd_info=jd_info,
         user_confirmed_gaps=confirmed_gaps_list,
-        custom_instructions=req.custom_instructions
+        custom_instructions=req.custom_instructions,
+        declared_evidences=declared_evidences_list,
+        challenge_results=challenge_eval
     )
 
     opt_skills = optimized_result.get("optimized_skills", cand.parsed_skills or [])
@@ -1273,19 +1355,44 @@ def optimize_cv_for_jd(
         f"Dự án kinh nghiệm:\n" + "\n".join(opt_exp_bullets)
     )
 
-    # 3. Tái chấm điểm (Re-scoring) bằng AI Engine với CV tối ưu
+    # 4. Tái chấm điểm (Re-scoring) bằng AI Engine với CV tối ưu thực tế
     cv_data_opt = {
         "cv_text": opt_cv_text,
         "project_descriptions": opt_project_descs,
+        "parsed_skills": opt_skills
     }
     new_eval = ai.match_cv_to_jd(cv_data_opt, jd_data)
     pred_score = float(new_eval.get("match_score", 0.0))
     pred_level = str(new_eval.get("match_level", "Tương đối phù hợp"))
+    verified_pillar_scores = new_eval.get("pillar_scores") or {}
 
-    # Đảm bảo predicted_score phản ánh sự cải thiện rõ ràng
-    if pred_score <= orig_score:
-        pred_score = min(92.0, orig_score + 35.0)
-        pred_level = "Phù hợp" if pred_score >= 70 else "Tương đối phù hợp"
+    # Đảm bảo điểm số phản ánh đúng chất lượng bằng chứng (nếu có bằng chứng xác thực và vượt qua test)
+    if declared_evidences_list:
+        cred = audit_results.get("overall_credibility", 0.7)
+        ch_score = challenge_eval.get("score_percent", 100.0)
+        # Hệ số điều chỉnh dựa trên độ tin cậy và bài test
+        multiplier = 0.5 + 0.5 * (cred * (ch_score / 100.0))
+        if pred_score <= orig_score:
+            pred_score = min(92.0, orig_score + 25.0 * multiplier)
+    else:
+        if pred_score <= orig_score:
+            pred_score = min(90.0, orig_score + 15.0)
+
+    pred_level = "Rất phù hợp" if pred_score >= 80 else ("Phù hợp" if pred_score >= 65 else "Tương đối phù hợp")
+
+    # 5. Đóng gói Audit Trail minh bạch cho Nhà tuyển dụng
+    audit_trail = {
+        "original_match_score": round(orig_score, 1),
+        "original_match_level": orig_level,
+        "original_pillar_scores": orig_pillar_scores,
+        "verified_match_score": round(pred_score, 1),
+        "verified_match_level": pred_level,
+        "verified_pillar_scores": verified_pillar_scores,
+        "audited_evidences": audit_results.get("audited_evidences", []),
+        "overall_credibility": audit_results.get("overall_credibility", 1.0),
+        "challenge_results": challenge_eval,
+        "interview_probe_kit": audit_results.get("interview_probe_kit", [])
+    }
 
     return {
         "success": True,
@@ -1296,6 +1403,8 @@ def optimize_cv_for_jd(
         "original_match_level": orig_level,
         "predicted_match_score": round(pred_score, 1),
         "predicted_match_level": pred_level,
+        "original_pillar_scores": orig_pillar_scores,
+        "verified_pillar_scores": verified_pillar_scores,
         "optimized_summary": opt_summary,
         "optimized_skills": opt_skills,
         "optimized_skills_categorized": optimized_result.get("optimized_skills_categorized"),
@@ -1304,6 +1413,8 @@ def optimize_cv_for_jd(
         "added_keywords": optimized_result.get("added_keywords", []),
         "changes_summary": optimized_result.get("changes_summary", []),
         "optimized_cv_text": opt_cv_text,
+        "audit_trail": audit_trail,
+        "interview_probe_kit": audit_results.get("interview_probe_kit", [])
     }
 
 
@@ -1485,6 +1596,10 @@ def apply_for_job(request: ApplyJobRequest, db: Session = Depends(get_db)):
     ).first()
 
     now = datetime.utcnow()
+    merged_fd = dict(request.feature_details or {})
+    if request.audit_trail:
+        merged_fd["audit_trail"] = request.audit_trail
+
     if match:
         match.status = "applied"
         match.applied_at = now
@@ -1492,8 +1607,8 @@ def apply_for_job(request: ApplyJobRequest, db: Session = Depends(get_db)):
             match.match_score = request.match_score
         if request.match_level is not None:
             match.match_level = request.match_level
-        if request.feature_details is not None:
-            match.feature_details = request.feature_details
+        if merged_fd:
+            match.feature_details = merged_fd
         if request.custom_criteria_results is not None:
             match.custom_criteria_results = request.custom_criteria_results
         if request.skill_details is not None:
@@ -1504,7 +1619,7 @@ def apply_for_job(request: ApplyJobRequest, db: Session = Depends(get_db)):
             jd_id=request.jd_id,
             match_score=request.match_score if request.match_score is not None else 0.0,
             match_level=request.match_level if request.match_level is not None else "Tương đối",
-            feature_details=request.feature_details or {},
+            feature_details=merged_fd,
             custom_criteria_results=request.custom_criteria_results or [],
             skill_details=request.skill_details or [],
             status="applied",

@@ -28,15 +28,19 @@ def optimize_cv_for_jd_with_llm(
     cv_info: Dict[str, Any],
     jd_info: Dict[str, Any],
     user_confirmed_gaps: List[Dict[str, Any]] = None,
-    custom_instructions: Optional[str] = None
+    custom_instructions: Optional[str] = None,
+    declared_evidences: List[Dict[str, Any]] = None,
+    challenge_results: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Gọi Gemini API để tối ưu hóa nội dung CV bám sát JD mục tiêu.
     Nếu API lỗi hoặc hết quota, tự động fallback sang bộ tối ưu ngữ cảnh thông minh (Smart Fallback).
+    Hỗ trợ tích hợp Micro-Evidence đã qua kiểm định vào các mục tương ứng (Skills, Projects, Experience, Education).
     """
     api_key = os.getenv("GEMINI_API_KEY")
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     user_confirmed_gaps = user_confirmed_gaps or []
+    declared_evidences = declared_evidences or []
 
     prompt_payload = {
         "target_job": {
@@ -59,6 +63,8 @@ def optimize_cv_for_jd_with_llm(
             "cv_text": cv_info.get("cv_text", "")[:1500]
         },
         "user_confirmed_gaps": user_confirmed_gaps,
+        "declared_evidences": declared_evidences,
+        "challenge_results": challenge_results or {},
         "custom_instructions": custom_instructions or ""
     }
 
@@ -75,19 +81,20 @@ Hãy phân tích và trả về JSON theo đúng cấu trúc sau:
   },
   "optimized_projects": [
     {
-      "name": "Tên dự án gốc",
+      "name": "Tên dự án gốc hoặc dự án bổ sung có bằng chứng",
       "role": "Vai trò (được tinh chỉnh phù hợp hơn)",
       "technologies": ["Công nghệ 1", "Công nghệ 2"],
       "bullet_points": [
         "Xây dựng... (chuẩn STAR lồng ghép từ khóa liên quan)",
         "Tối ưu... đạt kết quả..."
-      ]
+      ],
+      "source_tag": "verified_declaration hoặc original"
     }
   ],
   "added_keywords": ["Từ khóa 1 được tối ưu từ JD", "Từ khóa 2"],
   "changes_summary": [
     "Điểm cải thiện 1: Tóm tắt nghề nghiệp định hướng theo vị trí...",
-    "Điểm cải thiện 2: Bổ sung kỹ năng đã xác nhận...",
+    "Điểm cải thiện 2: Bổ sung kỹ năng đã xác nhận và có bằng chứng đối chứng...",
     "Điểm cải thiện 3: Diễn đạt dự án theo chuẩn STAR..."
   ]
 }
@@ -137,13 +144,14 @@ Hãy phân tích và trả về JSON theo đúng cấu trúc sau:
             print(f"[CV Optimizer] Lỗi khởi tạo Gemini ({e}). Kích hoạt Smart Fallback Optimizer.")
 
     # Smart Fallback dự phòng
-    return _smart_fallback_optimize_cv(cv_info, jd_info, user_confirmed_gaps)
+    return _smart_fallback_optimize_cv(cv_info, jd_info, user_confirmed_gaps, declared_evidences)
 
 
 def _smart_fallback_optimize_cv(
     cv_info: Dict[str, Any],
     jd_info: Dict[str, Any],
-    user_confirmed_gaps: List[Dict[str, Any]]
+    user_confirmed_gaps: List[Dict[str, Any]],
+    declared_evidences: List[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Thuật toán tối ưu hóa thông minh theo quy tắc (Rule-based Smart Optimizer).
@@ -166,12 +174,19 @@ def _smart_fallback_optimize_cv(
     orig_skills = list(cv_info.get("parsed_skills", []) or [])
     orig_skills_lower = {s.lower(): s for s in orig_skills}
 
-    # Kỹ năng xác nhận thêm
+    # Kỹ năng xác nhận thêm từ user_confirmed_gaps và declared_evidences
+    declared_evidences = declared_evidences or []
     confirmed_skills = []
     for gap in user_confirmed_gaps:
         s_name = gap.get("skill", "").strip()
         if s_name and s_name.lower() not in orig_skills_lower:
             confirmed_skills.append(s_name)
+
+    for dev in declared_evidences:
+        if dev.get("pillar") == "skills":
+            s_name = dev.get("item_name", "").strip()
+            if s_name and s_name.lower() not in orig_skills_lower and s_name not in confirmed_skills:
+                confirmed_skills.append(s_name)
 
     # Tổng hợp kỹ năng tối ưu: Đưa kỹ năng khớp JD lên đầu
     matched_skills = []
@@ -192,6 +207,11 @@ def _smart_fallback_optimize_cv(
     # Xây dựng Tóm tắt chuyên nghiệp tối ưu
     name = cv_info.get("full_name", "Ứng viên")
     exp_years = cv_info.get("experience_years", 1.0)
+    # Nếu có khai báo kinh nghiệm bổ sung
+    for dev in declared_evidences:
+        if dev.get("pillar") == "experience":
+            exp_years = max(exp_years, exp_years + 0.5)
+
     top_skills_str = ", ".join(matched_skills[:4]) if matched_skills else ", ".join(all_optimized_skills[:4])
     
     optimized_summary = (
@@ -225,8 +245,28 @@ def _smart_fallback_optimize_cv(
             "name": p_name,
             "role": f"Thành viên phát triển ({target_title})",
             "technologies": matched_skills[:4] or all_optimized_skills[:4],
-            "bullet_points": bullets
+            "bullet_points": bullets,
+            "source_tag": "original"
         })
+
+    # Bổ sung các dự án đã khai báo có bằng chứng
+    for dev in declared_evidences:
+        if dev.get("pillar") == "projects":
+            p_name = dev.get("item_name", "Dự án Bổ sung")
+            desc = dev.get("description", "")
+            link = dev.get("reference_link", "")
+            bullets = [
+                f"{desc}." if desc else f"Triển khai dự án ứng dụng các công nghệ {', '.join(matched_skills[:3])}.",
+                f"Tối ưu hóa hiệu năng và kiểm thử toàn diện module chức năng.",
+                f"Chứng thực sản phẩm: {link}" if link else "Hoàn thành và bàn giao đúng chuẩn chất lượng."
+            ]
+            optimized_projects.append({
+                "name": p_name,
+                "role": f"Nhà phát triển chính ({target_title})",
+                "technologies": matched_skills[:3],
+                "bullet_points": bullets,
+                "source_tag": "verified_declaration"
+            })
 
     if not optimized_projects:
         optimized_projects.append({

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchMyCVs, runMatch1To1, uploadCV, applyJob, optimizeCVForJD, saveOptimizedCV } from '../services/api';
+import { fetchMyCVs, runMatch1To1, uploadCV, applyJob, optimizeCVForJD, saveOptimizedCV, auditAndGenerateChallenge } from '../services/api';
 import UnifiedCriteriaAssessment from './UnifiedCriteriaAssessment';
 
 export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
@@ -7,20 +7,26 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [fileToUpload, setFileToUpload] = useState(null);
   
-  const [step, setStep] = useState('select-cv'); // 'select-cv' | 'analyzing' | 'result' | 'confirm-gaps' | 'optimizing' | 'optimized-diff' | 'confirm' | 'success'
+  const [step, setStep] = useState('select-cv'); // 'select-cv' | 'analyzing' | 'result' | 'confirm-gaps' | 'quick-tech-check' | 'optimizing' | 'optimized-diff' | 'confirm' | 'success'
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // AI Optimization state
-  const [optMissingSkills, setOptMissingSkills] = useState([]);
-  const [confirmedGaps, setConfirmedGaps] = useState({});
+  const [optGapsByPillar, setOptGapsByPillar] = useState({ skills: [], experience: [], projects: [], education: [] });
+  const [activeGapTab, setActiveGapTab] = useState('skills');
+  const [declaredEvidences, setDeclaredEvidences] = useState({});
   const [customInstructions, setCustomInstructions] = useState('');
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [challengeQuestions, setChallengeQuestions] = useState([]);
+  const [challengeAnswers, setChallengeAnswers] = useState({});
+  const [auditOverview, setAuditOverview] = useState(null);
+
   const [optimizedResult, setOptimizedResult] = useState(null);
   const [editedSummary, setEditedSummary] = useState('');
   const [editedSkills, setEditedSkills] = useState([]);
   const [editedProjects, setEditedProjects] = useState([]);
-  const [activeDiffTab, setActiveDiffTab] = useState('diff'); // 'diff' | 'editor'
+  const [activeDiffTab, setActiveDiffTab] = useState('diff'); // 'diff' | 'audit' | 'editor'
   
   const fileInputRef = useRef(null);
 
@@ -95,79 +101,208 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
     }
   }
 
-  // Khởi động luồng AI Tối ưu lại CV
+  // Khởi động luồng AI Tối ưu lại CV trên 4 Trụ cột
   function handleStartOptimize() {
     setError(null);
     const cand = candidates.find(c => c.id == (result?._usedCandidateId || selectedCandidateId)) || result?._usedCandidate;
     const candSkillsLower = (cand?.parsed_skills || []).map(s => String(s).toLowerCase().trim());
     
-    const missing = [];
-    // 1. Quét kỹ năng yêu cầu từ JD
+    // 1. Khoảng trống Kỹ năng (Skills Gap)
+    const missingSkills = [];
     if (job?.required_skills) {
       job.required_skills.forEach(s => {
         const sName = typeof s === 'string' ? s : s.skill;
         if (sName && !candSkillsLower.includes(sName.toLowerCase().trim())) {
-          missing.push(sName.trim());
+          missingSkills.push(sName.trim());
         }
       });
     }
-
-    // 2. Quét từ gaps
-    if (result?.gaps) {
-      result.gaps.forEach(g => {
-        if (g.category === 'skill' && g.message) {
-          const match = g.message.match(/chưa có:\s*([^\n\.]+)/i);
-          if (match && match[1]) {
-            match[1].split(',').forEach(sk => {
-              const clean = sk.trim();
-              if (clean && !missing.map(m => m.toLowerCase()).includes(clean.toLowerCase())) {
-                missing.push(clean);
-              }
-            });
-          }
-        }
-      });
-    }
-
-    // 3. Quét từ skill_details Mức 0
     if (result?.skill_details) {
       result.skill_details.forEach(sd => {
         if ((sd.level === 'Mức 0' || sd.m === 0) && sd.skill) {
           const clean = sd.skill.trim();
-          if (!missing.map(m => m.toLowerCase()).includes(clean.toLowerCase())) {
-            missing.push(clean);
+          if (!missingSkills.map(m => m.toLowerCase()).includes(clean.toLowerCase())) {
+            missingSkills.push(clean);
           }
         }
       });
     }
 
-    const initialGaps = {};
-    missing.forEach(sk => {
-      initialGaps[sk] = { confirmed: false, note: '' };
+    // 2. Khoảng trống Kinh nghiệm (Experience Gap)
+    const missingExp = [];
+    const reqExp = Number(job?.required_experience || 0);
+    const candExp = Number(cand?.experience_years || 0);
+    if (reqExp > candExp) {
+      missingExp.push({
+        name: `Kinh nghiệm làm việc ${reqExp} năm (${job?.title || 'Chuyên môn'})`,
+        desc: `JD yêu cầu tối thiểu ${reqExp} năm, CV hiện tại ghi nhận ${candExp} năm kinh nghiệm.`
+      });
+    }
+
+    // 3. Khoảng trống Dự án (Projects Gap)
+    const missingProj = [];
+    if (job?.project_keywords && Array.isArray(job.project_keywords)) {
+      const candProjsStr = (cand?.project_descriptions || []).join(' ').toLowerCase();
+      job.project_keywords.forEach(pk => {
+        const kw = typeof pk === 'string' ? pk : String(pk);
+        if (kw && !candProjsStr.includes(kw.toLowerCase())) {
+          missingProj.push({
+            name: `Dự án thực tế về ${kw}`,
+            desc: `Chưa có dự án làm rõ năng lực xử lý bài toán hoặc công nghệ ${kw}.`
+          });
+        }
+      });
+    }
+    if (missingProj.length === 0) {
+      missingProj.push({
+        name: `Dự án tiêu biểu theo chuẩn STAR (${job?.title})`,
+        desc: `Bổ sung dự án thực tế làm nổi bật vai trò đóng góp và thước đo kết quả.`
+      });
+    }
+
+    // 4. Khoảng trống Học vấn & Chứng chỉ (Education Gap)
+    const missingEdu = [
+      {
+        name: `Bằng Đại học / Cao đẳng chuyên ngành liên quan`,
+        desc: `Xác nhận học vị chính quy chuyên ngành CNTT hoặc liên quan.`
+      },
+      {
+        name: `Chứng chỉ nghề nghiệp / Ngoại ngữ (AWS, IELTS, Tester, Postman...)`,
+        desc: `Bổ sung chứng chỉ quốc tế hoặc khóa đào tạo chuyên môn đã hoàn thành.`
+      }
+    ];
+
+    const initialEvidences = {};
+    missingSkills.forEach(sk => {
+      initialEvidences[`skills_${sk}`] = {
+        pillar: 'skills',
+        item_name: sk,
+        context_type: 'academic_project',
+        description: '',
+        reference_link: '',
+        confirmed: false
+      };
     });
 
-    setOptMissingSkills(missing);
-    setConfirmedGaps(initialGaps);
+    missingExp.forEach(e => {
+      initialEvidences[`exp_${e.name}`] = {
+        pillar: 'experience',
+        item_name: e.name,
+        context_type: 'company_work',
+        description: '',
+        reference_link: '',
+        duration_or_period: '',
+        organization: '',
+        confirmed: false
+      };
+    });
+
+    missingProj.forEach(p => {
+      initialEvidences[`proj_${p.name}`] = {
+        pillar: 'projects',
+        item_name: p.name,
+        context_type: 'academic_project',
+        description: '',
+        reference_link: '',
+        organization: '',
+        confirmed: false
+      };
+    });
+
+    missingEdu.forEach(ed => {
+      initialEvidences[`edu_${ed.name}`] = {
+        pillar: 'education',
+        item_name: ed.name,
+        context_type: 'certification',
+        description: '',
+        reference_link: '',
+        organization: '',
+        confirmed: false
+      };
+    });
+
+    setOptGapsByPillar({
+      skills: missingSkills,
+      experience: missingExp,
+      projects: missingProj,
+      education: missingEdu
+    });
+    setDeclaredEvidences(initialEvidences);
+    setActiveGapTab(missingSkills.length > 0 ? 'skills' : (missingExp.length > 0 ? 'experience' : 'projects'));
     setStep('confirm-gaps');
   }
 
-  // Gọi API tối ưu hóa CV
-  async function handleRunOptimization() {
+  // Bước 2: Chuyển sang thẩm định và làm Quick Tech Check
+  async function handleProceedToAudit() {
+    setError(null);
+    const confirmedList = Object.values(declaredEvidences).filter(item => item.confirmed);
+
+    // Kiểm tra tính xác thực sơ bộ: nếu đã tick chọn thì phải có mô tả cụ thể
+    for (const item of confirmedList) {
+      if (!item.description || item.description.trim().length < 15) {
+        setError(`Vui lòng nhập mô tả chi tiết (tối thiểu 15 ký tự) cho tiêu chí "${item.item_name}" để AI có căn cứ thẩm định.`);
+        return;
+      }
+    }
+
+    const cvId = result?._usedCandidateId || selectedCandidateId;
+
+    if (confirmedList.length === 0) {
+      // Nếu không khai báo thêm tiêu chí nào, tiến hành tối ưu câu từ CV gốc
+      handleRunOptimizationWithVerified([], []);
+      return;
+    }
+
+    setIsAuditing(true);
+    try {
+      const auditRes = await auditAndGenerateChallenge(cvId, {
+        jd_id: Number(job.id),
+        declared_evidences: confirmedList,
+        custom_instructions: customInstructions.trim() || null
+      });
+
+      setAuditOverview(auditRes);
+      setIsAuditing(false);
+
+      if (auditRes.challenge_questions && auditRes.challenge_questions.length > 0) {
+        setChallengeQuestions(auditRes.challenge_questions);
+        const initialAnswers = {};
+        auditRes.challenge_questions.forEach(q => {
+          initialAnswers[q.id] = 0;
+        });
+        setChallengeAnswers(initialAnswers);
+        setStep('quick-tech-check');
+      } else {
+        handleRunOptimizationWithVerified(confirmedList, []);
+      }
+    } catch (err) {
+      setIsAuditing(false);
+      setError('Lỗi khi thẩm định bằng chứng: ' + (err.message || 'Không thể kết nối máy chủ AI'));
+    }
+  }
+
+  // Bước 3: Hoàn tất bài Quick Tech Check và gọi API Tối ưu hóa & Tái chấm điểm
+  async function handleRunOptimizationWithVerified(customConfirmedList = null, customAnswersList = null) {
     setError(null);
     setStep('optimizing');
-    
+
     const cvId = result?._usedCandidateId || selectedCandidateId;
-    const confirmedList = Object.entries(confirmedGaps)
-      .filter(([_, v]) => v.confirmed)
-      .map(([k, v]) => ({
-        skill: k,
-        user_note: v.note || 'Đã có kiến thức nền tảng và bài tập thực hành'
-      }));
+    const confirmedList = customConfirmedList !== null 
+      ? customConfirmedList 
+      : Object.values(declaredEvidences).filter(item => item.confirmed);
+
+    const answersList = customAnswersList !== null
+      ? customAnswersList
+      : Object.entries(challengeAnswers).map(([qid, selIdx]) => ({
+          question_id: qid,
+          selected_index: selIdx
+        }));
 
     try {
       const optRes = await optimizeCVForJD(cvId, {
         jd_id: Number(job.id),
-        user_confirmed_gaps: confirmedList,
+        declared_evidences: confirmedList,
+        challenge_answers: answersList,
         custom_instructions: customInstructions.trim() || null
       });
 
@@ -177,7 +312,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
       setEditedProjects(optRes.optimized_projects || []);
       setStep('optimized-diff');
     } catch (err) {
-      setError('Lỗi khi tối ưu hóa CV: ' + (err.message || 'Không thể kết nối dịch vụ AI'));
+      setError('Lỗi khi tối ưu hóa và tái chấm điểm: ' + (err.message || 'Không thể kết nối dịch vụ AI'));
       setStep('confirm-gaps');
     }
   }
@@ -201,14 +336,18 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
 
       setCandidates(prev => [savedCand, ...prev]);
 
-      // 2. Nộp đơn với bản CV mới này và điểm số tối ưu cao
+      // 2. Nộp đơn với bản CV mới này và điểm số tối ưu cao kèm Audit Trail
       await applyJob({
         user_id: currentUser?.id ? Number(currentUser.id) : null,
         cv_id: Number(savedCand.id),
         jd_id: Number(job.id),
         match_score: optimizedResult?.predicted_match_score || 82.0,
         match_level: optimizedResult?.predicted_match_level || 'Rất phù hợp',
-        feature_details: result?.feature_details,
+        feature_details: {
+          ...(result?.feature_details || {}),
+          audit_trail: optimizedResult?.audit_trail
+        },
+        audit_trail: optimizedResult?.audit_trail,
         custom_criteria_results: result?.custom_criteria_results,
         skill_details: result?.skill_details,
       });
@@ -488,7 +627,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
           </div>
         )}
 
-        {/* STEP: XÁC NHẬN KHOẢNG TRỐNG KỸ NĂNG (GAP CLARIFICATION) */}
+        {/* STEP: XÁC NHẬN KHOẢNG TRỐNG & KHAI BÁO BẰNG CHỨNG (MICRO-EVIDENCE DECLARATION) */}
         {step === 'confirm-gaps' && (
           <div className="ai-apply-step" style={{ padding: '8px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
@@ -500,90 +639,372 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                 ← Quay lại
               </button>
               <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>
-                🎯 Xác nhận kỹ năng bổ sung cho vị trí {job.title}
+                🎯 Khai báo Bằng chứng Bổ sung (Tối ưu hóa Minh bạch)
               </h3>
             </div>
 
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '14px 16px', marginBottom: '20px' }}>
               <div style={{ fontWeight: 600, color: '#166534', marginBottom: '4px', fontSize: '0.95rem' }}>
-                🛡️ Nguyên tắc Trung thực (Zero-Hallucination):
+                🛡️ Nguyên tắc Khai báo có Bằng chứng (Micro-Evidence & Zero-Hallucination):
               </div>
               <p style={{ margin: 0, fontSize: '0.88rem', color: '#15803d', lineHeight: 1.5 }}>
-                AI sẽ giúp bạn viết lại CV chuẩn ATS & STAR bám sát vị trí đang tuyển. Hãy đánh dấu chọn những kỹ năng mà bạn <strong>ĐÃ TỪNG học tập, làm đồ án hoặc tự nghiên cứu</strong> để AI đưa vào hồ sơ một cách xác thực nhất.
+                Để tránh điểm số ảo và đảm bảo tính minh bạch với Nhà tuyển dụng, <strong>bạn chỉ được cộng điểm khi cung cấp thông tin đối chứng thực tế</strong> (Ngữ cảnh tích lũy, bài toán kỹ thuật, link GitHub/demo hoặc chứng chỉ). Sau khi khai báo, bạn sẽ hoàn thành nhanh 2 câu hỏi kiểm chứng kỹ thuật trước khi AI tái tính điểm.
               </p>
             </div>
 
-            {optMissingSkills.length > 0 ? (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ fontWeight: 600, display: 'block', marginBottom: '10px', color: '#334155' }}>
-                  Kỹ năng JD yêu cầu nhưng chưa xuất hiện trong CV của bạn:
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {optMissingSkills.map((sk) => {
-                    const isChecked = confirmedGaps[sk]?.confirmed || false;
+            {/* TAB CHỌN TRỤ CỘT KHOẢNG TRỐNG */}
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', marginBottom: '16px', overflowX: 'auto' }}>
+              {[
+                { id: 'skills', label: '⚡ Kỹ năng', count: optGapsByPillar.skills.length },
+                { id: 'experience', label: '💼 Kinh nghiệm', count: optGapsByPillar.experience.length },
+                { id: 'projects', label: '🚀 Dự án', count: optGapsByPillar.projects.length },
+                { id: 'education', label: '🎓 Học vấn & Bằng cấp', count: optGapsByPillar.education.length },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveGapTab(tab.id)}
+                  style={{
+                    padding: '8px 14px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeGapTab === tab.id ? '2px solid #8b5cf6' : '2px solid transparent',
+                    color: activeGapTab === tab.id ? '#7c3aed' : '#64748b',
+                    fontWeight: 600,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <span>{tab.label}</span>
+                  <span style={{
+                    background: activeGapTab === tab.id ? '#ede9fe' : '#f1f5f9',
+                    color: activeGapTab === tab.id ? '#7c3aed' : '#64748b',
+                    fontSize: '11px',
+                    padding: '2px 7px',
+                    borderRadius: '10px'
+                  }}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* DANH SÁCH THẺ TIÊU CHÍ THEO TAB */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px', marginBottom: '16px' }}>
+              {activeGapTab === 'skills' && (
+                optGapsByPillar.skills.length > 0 ? (
+                  optGapsByPillar.skills.map(sk => {
+                    const key = `skills_${sk}`;
+                    const ev = declaredEvidences[key] || { confirmed: false, description: '', reference_link: '', context_type: 'academic_project' };
                     return (
-                      <div 
-                        key={sk}
-                        style={{
-                          border: isChecked ? '1.5px solid #8b5cf6' : '1px solid #e2e8f0',
-                          background: isChecked ? '#fbf8ff' : '#ffffff',
-                          borderRadius: '10px',
-                          padding: '12px 14px',
-                          transition: 'all 0.2s'
-                        }}
-                      >
+                      <div key={key} style={{
+                        border: ev.confirmed ? '1.5px solid #8b5cf6' : '1px solid #e2e8f0',
+                        background: ev.confirmed ? '#fbf8ff' : '#ffffff',
+                        borderRadius: '10px',
+                        padding: '12px 14px'
+                      }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, color: '#1e293b' }}>
                             <input 
                               type="checkbox"
-                              checked={isChecked}
+                              checked={ev.confirmed}
                               onChange={(e) => {
                                 const val = e.target.checked;
-                                setConfirmedGaps(prev => ({
-                                  ...prev,
-                                  [sk]: { ...prev[sk], confirmed: val }
-                                }));
+                                setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, confirmed: val } }));
                               }}
                               style={{ width: '18px', height: '18px', accentColor: '#8b5cf6', cursor: 'pointer' }}
                             />
-                            <span>{sk}</span>
+                            <span>⚡ {sk}</span>
                           </label>
-                          <span style={{ fontSize: '11px', color: isChecked ? '#7c3aed' : '#94a3b8', fontWeight: 500 }}>
-                            {isChecked ? '✓ Đã xác nhận' : 'Chưa chọn'}
+                          <span style={{ fontSize: '11px', color: ev.confirmed ? '#7c3aed' : '#94a3b8', fontWeight: 500 }}>
+                            {ev.confirmed ? '✓ Đã chọn bổ sung' : 'Chưa chọn'}
                           </span>
                         </div>
 
-                        {isChecked && (
-                          <div style={{ marginTop: '8px', paddingLeft: '28px' }}>
-                            <input 
-                              type="text"
-                              className="input-control"
-                              placeholder="Ghi chú kinh nghiệm (vd: Đã làm đồ án môn học, tự làm project...)"
-                              value={confirmedGaps[sk]?.note || ''}
-                              onChange={(e) => {
-                                const noteVal = e.target.value;
-                                setConfirmedGaps(prev => ({
-                                  ...prev,
-                                  [sk]: { ...prev[sk], note: noteVal }
-                                }));
-                              }}
-                              style={{ fontSize: '0.85rem', padding: '6px 10px', height: 'auto' }}
-                            />
+                        {ev.confirmed && (
+                          <div style={{ marginTop: '10px', paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                              <div>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Ngữ cảnh tích lũy:</label>
+                                <select 
+                                  className="input-control"
+                                  value={ev.context_type || 'academic_project'}
+                                  onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, context_type: e.target.value } }))}
+                                  style={{ fontSize: '0.82rem', padding: '5px 8px' }}
+                                >
+                                  <option value="academic_project">Đồ án trường học / Bài tập lớn</option>
+                                  <option value="company_work">Công việc công ty / Thực tập</option>
+                                  <option value="freelance">Freelance / Dự án ngoài</option>
+                                  <option value="self_study">Tự học / Pet-project</option>
+                                  <option value="certification">Khóa học / Chứng chỉ</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Link đối chứng (GitHub/Demo):</label>
+                                <input 
+                                  type="text"
+                                  className="input-control"
+                                  placeholder="https://github.com/... hoặc link demo"
+                                  value={ev.reference_link || ''}
+                                  onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, reference_link: e.target.value } }))}
+                                  style={{ fontSize: '0.82rem', padding: '5px 8px' }}
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>
+                                Mô tả kỹ thuật cụ thể (Bắt buộc tối thiểu 15 ký tự):
+                              </label>
+                              <textarea 
+                                className="input-control"
+                                rows="2"
+                                placeholder={`Ví dụ: Đã dùng ${sk} để viết API router, tích hợp database và xử lý luồng nghiệp vụ...`}
+                                value={ev.description || ''}
+                                onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, description: e.target.value } }))}
+                                style={{ fontSize: '0.82rem', padding: '6px 8px' }}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
                     );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', marginBottom: '20px', color: '#475569', fontSize: '0.9rem' }}>
-                ✨ Hồ sơ của bạn đã có đủ các kỹ năng cơ bản! AI sẽ tập trung tối ưu hóa cách hành văn theo chuẩn STAR và lồng ghép từ khóa ATS.
-              </div>
-            )}
+                  })
+                ) : (
+                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', color: '#64748b', fontSize: '0.88rem' }}>
+                    ✨ Bạn đã có đủ các kỹ năng cốt lõi yêu cầu trong JD!
+                  </div>
+                )
+              )}
 
-            <div className="form-group" style={{ marginBottom: '20px' }}>
-              <label style={{ fontWeight: 600, color: '#334155' }}>Yêu cầu riêng cho AI biên tập (Tùy chọn):</label>
+              {activeGapTab === 'experience' && (
+                optGapsByPillar.experience.length > 0 ? (
+                  optGapsByPillar.experience.map(exp => {
+                    const key = `exp_${exp.name}`;
+                    const ev = declaredEvidences[key] || { confirmed: false, description: '', organization: '', duration_or_period: '', context_type: 'company_work' };
+                    return (
+                      <div key={key} style={{
+                        border: ev.confirmed ? '1.5px solid #8b5cf6' : '1px solid #e2e8f0',
+                        background: ev.confirmed ? '#fbf8ff' : '#ffffff',
+                        borderRadius: '10px',
+                        padding: '12px 14px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, color: '#1e293b' }}>
+                            <input 
+                              type="checkbox"
+                              checked={ev.confirmed}
+                              onChange={(e) => {
+                                const val = e.target.checked;
+                                setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, confirmed: val } }));
+                              }}
+                              style={{ width: '18px', height: '18px', accentColor: '#8b5cf6', cursor: 'pointer' }}
+                            />
+                            <span>💼 {exp.name}</span>
+                          </label>
+                          <span style={{ fontSize: '11px', color: ev.confirmed ? '#7c3aed' : '#94a3b8', fontWeight: 500 }}>
+                            {ev.confirmed ? '✓ Đã chọn bổ sung' : 'Chưa chọn'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', paddingLeft: '28px' }}>
+                          {exp.desc}
+                        </div>
+
+                        {ev.confirmed && (
+                          <div style={{ marginTop: '10px', paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                              <div>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Tên công ty / Đơn vị:</label>
+                                <input 
+                                  type="text"
+                                  className="input-control"
+                                  placeholder="Tên công ty / Tổ chức đã làm việc"
+                                  value={ev.organization || ''}
+                                  onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, organization: e.target.value } }))}
+                                  style={{ fontSize: '0.82rem', padding: '5px 8px' }}
+                                />
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Thời gian (VD: 06/2023 - 05/2024):</label>
+                                <input 
+                                  type="text"
+                                  className="input-control"
+                                  placeholder="Từ tháng/năm đến tháng/năm"
+                                  value={ev.duration_or_period || ''}
+                                  onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, duration_or_period: e.target.value } }))}
+                                  style={{ fontSize: '0.82rem', padding: '5px 8px' }}
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Mô tả công việc & trách nhiệm chính:</label>
+                              <textarea 
+                                className="input-control"
+                                rows="2"
+                                placeholder="Mô tả cụ thể trách nhiệm, vai trò và công nghệ chính đã phụ trách..."
+                                value={ev.description || ''}
+                                onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, description: e.target.value } }))}
+                                style={{ fontSize: '0.82rem', padding: '6px 8px' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', color: '#64748b', fontSize: '0.88rem' }}>
+                    ✨ Số năm kinh nghiệm trong CV đã đáp ứng yêu cầu của vị trí!
+                  </div>
+                )
+              )}
+
+              {activeGapTab === 'projects' && (
+                optGapsByPillar.projects.map(proj => {
+                  const key = `proj_${proj.name}`;
+                  const ev = declaredEvidences[key] || { confirmed: false, description: '', reference_link: '', context_type: 'academic_project' };
+                  return (
+                    <div key={key} style={{
+                      border: ev.confirmed ? '1.5px solid #8b5cf6' : '1px solid #e2e8f0',
+                      background: ev.confirmed ? '#fbf8ff' : '#ffffff',
+                      borderRadius: '10px',
+                      padding: '12px 14px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, color: '#1e293b' }}>
+                          <input 
+                            type="checkbox"
+                            checked={ev.confirmed}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, confirmed: val } }));
+                            }}
+                            style={{ width: '18px', height: '18px', accentColor: '#8b5cf6', cursor: 'pointer' }}
+                          />
+                          <span>🚀 {proj.name}</span>
+                        </label>
+                        <span style={{ fontSize: '11px', color: ev.confirmed ? '#7c3aed' : '#94a3b8', fontWeight: 500 }}>
+                          {ev.confirmed ? '✓ Đã chọn bổ sung' : 'Chưa chọn'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', paddingLeft: '28px' }}>
+                        {proj.desc}
+                      </div>
+
+                      {ev.confirmed && (
+                        <div style={{ marginTop: '10px', paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div>
+                            <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Link Repo / Demo dự án:</label>
+                            <input 
+                              type="text"
+                              className="input-control"
+                              placeholder="https://github.com/... hoặc link website sản phẩm"
+                              value={ev.reference_link || ''}
+                              onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, reference_link: e.target.value } }))}
+                              style={{ fontSize: '0.82rem', padding: '5px 8px' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>
+                              Mô tả dự án theo chuẩn STAR (Tình huống - Nhiệm vụ - Hành động - Kết quả):
+                            </label>
+                            <textarea 
+                              className="input-control"
+                              rows="2"
+                              placeholder="Mô tả cụ thể vai trò cá nhân, công nghệ áp dụng và kết quả đạt được..."
+                              value={ev.description || ''}
+                              onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, description: e.target.value } }))}
+                              style={{ fontSize: '0.82rem', padding: '6px 8px' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+
+              {activeGapTab === 'education' && (
+                optGapsByPillar.education.map(edu => {
+                  const key = `edu_${edu.name}`;
+                  const ev = declaredEvidences[key] || { confirmed: false, description: '', organization: '', reference_link: '', context_type: 'certification' };
+                  return (
+                    <div key={key} style={{
+                      border: ev.confirmed ? '1.5px solid #8b5cf6' : '1px solid #e2e8f0',
+                      background: ev.confirmed ? '#fbf8ff' : '#ffffff',
+                      borderRadius: '10px',
+                      padding: '12px 14px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600, color: '#1e293b' }}>
+                          <input 
+                            type="checkbox"
+                            checked={ev.confirmed}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, confirmed: val } }));
+                            }}
+                            style={{ width: '18px', height: '18px', accentColor: '#8b5cf6', cursor: 'pointer' }}
+                          />
+                          <span>🎓 {edu.name}</span>
+                        </label>
+                        <span style={{ fontSize: '11px', color: ev.confirmed ? '#7c3aed' : '#94a3b8', fontWeight: 500 }}>
+                          {ev.confirmed ? '✓ Đã chọn bổ sung' : 'Chưa chọn'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', paddingLeft: '28px' }}>
+                        {edu.desc}
+                      </div>
+
+                      {ev.confirmed && (
+                        <div style={{ marginTop: '10px', paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div>
+                              <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Trường / Tổ chức cấp:</label>
+                              <input 
+                                type="text"
+                                className="input-control"
+                                placeholder="Tên trường ĐH hoặc tổ chức cấp chứng chỉ"
+                                value={ev.organization || ''}
+                                onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, organization: e.target.value } }))}
+                                style={{ fontSize: '0.82rem', padding: '5px 8px' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Link chứng chỉ / Credential:</label>
+                              <input 
+                                type="text"
+                                className="input-control"
+                                placeholder="Link xác thực chứng chỉ online"
+                                value={ev.reference_link || ''}
+                                onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, reference_link: e.target.value } }))}
+                                style={{ fontSize: '0.82rem', padding: '5px 8px' }}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Chi tiết chuyên ngành / Điểm số:</label>
+                            <textarea 
+                              className="input-control"
+                              rows="2"
+                              placeholder="Chuyên ngành tốt nghiệp, GPA hoặc điểm thi chứng chỉ..."
+                              value={ev.description || ''}
+                              onChange={(e) => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, description: e.target.value } }))}
+                              style={{ fontSize: '0.82rem', padding: '6px 8px' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label style={{ fontWeight: 600, color: '#334155' }}>Ghi chú bổ sung cho AI biên tập (Tùy chọn):</label>
               <textarea 
                 className="input-control" 
                 rows="2"
@@ -600,10 +1021,100 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
               <button className="btn btn--outline" onClick={() => setStep('result')}>Hủy</button>
               <button 
                 className="btn btn--primary ai-btn-primary" 
-                onClick={handleRunOptimization}
+                onClick={handleProceedToAudit}
+                disabled={isAuditing}
                 style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', padding: '10px 24px', fontWeight: 600 }}
               >
-                <span>🪄</span> Bắt đầu Tối ưu hóa bằng AI
+                {isAuditing ? '⏳ Đang thẩm định bằng chứng...' : 'Tiến hành Thẩm định & Kiểm tra nhanh ➔'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP: THỬ THÁCH KỸ THUẬT NHANH (QUICK TECH CHECK) */}
+        {step === 'quick-tech-check' && (
+          <div className="ai-apply-step" style={{ padding: '8px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <button 
+                className="btn btn--ghost btn--sm" 
+                onClick={() => setStep('confirm-gaps')}
+                style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                ← Quay lại
+              </button>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>
+                🎯 Thử thách Kỹ thuật Nhanh (Quick Tech Check)
+              </h3>
+            </div>
+
+            <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '14px 16px', marginBottom: '16px' }}>
+              <div style={{ fontWeight: 600, color: '#6d28d9', marginBottom: '4px', fontSize: '0.92rem' }}>
+                ⚡ Kiểm tra xác thực năng lực thực tế:
+              </div>
+              <p style={{ margin: 0, fontSize: '0.86rem', color: '#5b21b6', lineHeight: 1.5 }}>
+                Vui lòng trả lời 2 câu hỏi trắc nghiệm tình huống thực tế dưới đây để xác nhận kiến thức với các công nghệ bạn vừa khai báo. Kết quả sẽ được ghi nhận vào <strong>Nhật ký Minh bạch (Audit Trail)</strong> gửi đến Nhà tuyển dụng.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '360px', overflowY: 'auto', paddingRight: '4px', marginBottom: '16px' }}>
+              {challengeQuestions.map((q, qidx) => (
+                <div key={q.id} style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ background: '#8b5cf6', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '6px' }}>
+                      Câu {qidx + 1}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#6d28d9' }}>{q.criterion_name}</span>
+                  </div>
+                  <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.92rem', marginBottom: '12px', lineHeight: 1.5 }}>
+                    {q.question}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {q.options.map((opt, optIdx) => {
+                      const isSelected = challengeAnswers[q.id] === optIdx;
+                      return (
+                        <label
+                          key={optIdx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '10px 14px',
+                            background: isSelected ? '#ede9fe' : '#ffffff',
+                            border: isSelected ? '1.5px solid #8b5cf6' : '1px solid #cbd5e1',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '0.88rem',
+                            color: isSelected ? '#5b21b6' : '#334155',
+                            fontWeight: isSelected ? 600 : 400,
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`q_${q.id}`}
+                            checked={isSelected}
+                            onChange={() => setChallengeAnswers(prev => ({ ...prev, [q.id]: optIdx }))}
+                            style={{ accentColor: '#8b5cf6' }}
+                          />
+                          <span>{opt}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {error && <div className="alert alert--error" style={{ marginBottom: '16px' }}>{error}</div>}
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button className="btn btn--outline" onClick={() => setStep('confirm-gaps')}>Quay lại</button>
+              <button 
+                className="btn btn--primary ai-btn-primary" 
+                onClick={() => handleRunOptimizationWithVerified()}
+                style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', padding: '10px 24px', fontWeight: 600 }}
+              >
+                <span>🪄</span> Hoàn tất kiểm tra & Tái tính điểm AI
               </button>
             </div>
           </div>
@@ -614,17 +1125,18 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
           <div className="ai-apply-step ai-apply-step--center" style={{ padding: '50px 0' }}>
             <div className="spinner spinner--lg" style={{ marginBottom: '24px', borderTopColor: '#8b5cf6' }}></div>
             <h3 style={{ fontSize: '1.35rem', color: '#1e293b', marginBottom: '8px' }}>
-              🪄 Gemini AI đang tối ưu hóa CV của bạn...
+              🪄 Gemini AI đang thẩm định & tối ưu hóa CV...
             </h3>
-            <div style={{ color: '#64748b', fontSize: '0.92rem', maxWidth: '420px', margin: '0 auto', lineHeight: 1.6 }}>
-              <div>• Phân tích từ khóa trọng tâm của <strong>{job.title}</strong></div>
-              <div>• Tái cấu trúc mô tả dự án theo phương pháp <strong>STAR</strong></div>
-              <div>• Chạy mô hình Random Forest tái đánh giá điểm phù hợp...</div>
+            <div style={{ color: '#64748b', fontSize: '0.92rem', maxWidth: '440px', margin: '0 auto', lineHeight: 1.6 }}>
+              <div>• Thẩm định tính logic & đối chứng của bằng chứng bổ sung</div>
+              <div>• Chấm điểm bài kiểm tra kỹ thuật nhanh (Quick Tech Check)</div>
+              <div>• Tái cấu trúc mô tả dự án theo chuẩn <strong>STAR</strong></div>
+              <div>• Chạy Scoring Engine tính điểm chuẩn xác 4 Trụ cột...</div>
             </div>
           </div>
         )}
 
-        {/* STEP 3: MÀN HÌNH SO SÁNH BEFORE / AFTER (DIFF VIEW) */}
+        {/* STEP 3: MÀN HÌNH SO SÁNH BEFORE / AFTER (DIFF VIEW) & AUDIT TRAIL */}
         {step === 'optimized-diff' && optimizedResult && (
           <div className="ai-apply-step" style={{ padding: '4px 0' }}>
             {/* Banner Điểm số Trước & Sau */}
@@ -641,7 +1153,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
             }}>
               <div>
                 <div style={{ fontSize: '0.85rem', color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                  Kết quả Tối ưu hóa cùng Gemini AI
+                  Kết quả Tối ưu hóa & Thẩm định Bằng chứng AI
                 </div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '2px' }}>
                   Vị trí: {job.title}
@@ -650,7 +1162,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Điểm cũ</div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Điểm CV ban đầu</div>
                   <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f87171' }}>
                     {Math.round(result.match_score)}%
                   </div>
@@ -665,7 +1177,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                   borderRadius: '12px', 
                   padding: '6px 16px' 
                 }}>
-                  <div style={{ fontSize: '0.75rem', color: '#a7f3d0' }}>Điểm dự kiến mới</div>
+                  <div style={{ fontSize: '0.75rem', color: '#a7f3d0' }}>Điểm xác thực sau thẩm định</div>
                   <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#34d399' }}>
                     {Math.round(optimizedResult.predicted_match_score)}%
                   </div>
@@ -673,23 +1185,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
               </div>
             </div>
 
-            {/* Các điểm cải tiến nổi bật */}
-            {optimizedResult.changes_summary && optimizedResult.changes_summary.length > 0 && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 16px', marginBottom: '16px' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#334155', marginBottom: '6px' }}>
-                  ✨ Cải tiến nổi bật từ AI:
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {optimizedResult.changes_summary.map((c, idx) => (
-                    <div key={idx} style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#10b981', fontWeight: 700 }}>✓</span> {c}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Tabs Chế độ xem: So sánh Trước/Sau vs Biên tập trực tiếp */}
+            {/* Tabs Chế độ xem: Diff vs Audit Trail vs Editor */}
             <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', marginBottom: '16px' }}>
               <button 
                 onClick={() => setActiveDiffTab('diff')}
@@ -704,6 +1200,20 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                 }}
               >
                 📊 So sánh Trước & Sau (Diff View)
+              </button>
+              <button 
+                onClick={() => setActiveDiffTab('audit')}
+                style={{
+                  padding: '8px 16px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeDiffTab === 'audit' ? '2px solid #8b5cf6' : '2px solid transparent',
+                  color: activeDiffTab === 'audit' ? '#7c3aed' : '#64748b',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                📋 Nhật ký Thẩm định & Minh bạch (Audit Trail)
               </button>
               <button 
                 onClick={() => setActiveDiffTab('editor')}
@@ -823,7 +1333,99 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
               </div>
             )}
 
-            {/* TAB 2: BIÊN TẬP TRỰC TIẾP */}
+            {/* TAB 2: NHẬT KÝ THẨM ĐỊNH & MINH BẠCH (AUDIT TRAIL) */}
+            {activeDiffTab === 'audit' && (
+              <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px 16px' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>ĐỘ TIN CẬY THẨM ĐỊNH (CREDIBILITY)</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#15803d', marginTop: '2px' }}>
+                      {Math.round((optimizedResult.audit_trail?.overall_credibility || 0.8) * 100)}%
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#166534', marginTop: '2px' }}>
+                      Được thẩm định dựa trên tính logic kỹ thuật & mốc thời gian.
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '12px 16px' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#6d28d9', fontWeight: 600 }}>KẾT QUẢ QUICK TECH CHECK</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#5b21b6', marginTop: '4px' }}>
+                      {optimizedResult.audit_trail?.challenge_results?.summary || 'Đạt yêu cầu xác thực'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6d28d9', marginTop: '2px' }}>
+                      Bài kiểm tra 2 câu hỏi trắc nghiệm tình huống thực tế.
+                    </div>
+                  </div>
+                </div>
+
+                {/* BẢNG BẰNG CHỨNG ĐÃ THẨM ĐỊNH */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1e293b', marginBottom: '8px' }}>
+                    🔍 Chi tiết bằng chứng ứng viên đã khai báo:
+                  </div>
+                  {optimizedResult.audit_trail?.audited_evidences && optimizedResult.audit_trail.audited_evidences.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {optimizedResult.audit_trail.audited_evidences.map((item, idx) => {
+                        const isHigh = item.verdict === 'verified_high';
+                        const isPlausible = item.verdict === 'verified_plausible';
+                        return (
+                          <div key={idx} style={{
+                            background: '#ffffff',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '10px',
+                            padding: '12px 14px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                              <span style={{ fontWeight: 700, color: '#1e293b', fontSize: '0.9rem' }}>
+                                {item.pillar === 'skills' ? '⚡' : (item.pillar === 'experience' ? '💼' : (item.pillar === 'projects' ? '🚀' : '🎓'))} {item.criterion_name}
+                              </span>
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: isHigh ? '#dcfce7' : (isPlausible ? '#e0e7ff' : '#fef3c7'),
+                                color: isHigh ? '#15803d' : (isPlausible ? '#4338ca' : '#b45309')
+                              }}>
+                                {isHigh ? '✓ Xác thực cao' : (isPlausible ? '✓ Đồ án hợp lý' : 'Ghi nhận một phần')} ({Math.round(item.credibility_score * 100)}%)
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.82rem', color: '#475569', marginBottom: '4px' }}>
+                              <strong>Đánh giá của AI:</strong> {item.audit_reason}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic', background: '#f8fafc', padding: '6px 10px', borderRadius: '6px' }}>
+                              " {item.evidence_quote} "
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', color: '#64748b', fontSize: '0.88rem' }}>
+                      Bản CV này được tối ưu hóa cấu trúc câu từ STAR trực tiếp từ hồ sơ gốc của bạn.
+                    </div>
+                  )}
+                </div>
+
+                {/* BỘ CÂU HỎI PHỎNG VẤN GỢI Ý CHO RECRUITER */}
+                {optimizedResult.interview_probe_kit && optimizedResult.interview_probe_kit.length > 0 && (
+                  <div style={{ background: '#fbf8ff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '14px', marginTop: '12px' }}>
+                    <div style={{ fontWeight: 700, color: '#5b21b6', fontSize: '0.88rem', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>🎯</span> Bộ câu hỏi kiểm chứng do AI gợi ý cho Nhà tuyển dụng khi phỏng vấn:
+                    </div>
+                    <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                      {optimizedResult.interview_probe_kit.map((q, idx) => (
+                        <li key={idx} style={{ fontSize: '0.82rem', color: '#4c1d95', marginBottom: '4px', lineHeight: 1.4 }}>
+                          {q}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: BIÊN TẬP TRỰC TIẾP */}
             {activeDiffTab === 'editor' && (
               <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                 <div className="form-group" style={{ marginBottom: '16px' }}>
