@@ -12,7 +12,6 @@ const PAGE_TITLES = {
   'company-management': 'Quản lý công ty',
   inquiries: 'Quản lý liên hệ',
   'candidate-detail': 'Chi tiết ứng viên',
-  'ai-agent': 'AI Matching',
   reports: 'Báo cáo',
 };
 

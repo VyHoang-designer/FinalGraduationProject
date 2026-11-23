@@ -44,16 +44,6 @@ const NAV_ITEMS = [
   },
   { type: 'divider' },
   {
-    id: 'ai-agent',
-    label: 'AI Matching',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="6" r="1.5" fill="currentColor"/><path d="M9 18l3-3 3 3"/>
-      </svg>
-    ),
-    badge: 'AI',
-  },
-  {
     id: 'reports',
     label: 'Báo cáo',
     icon: (

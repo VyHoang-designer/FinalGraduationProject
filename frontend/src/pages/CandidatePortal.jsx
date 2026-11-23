@@ -677,7 +677,6 @@ export default function CandidatePortal({ currentUser, onLogout, onNavigate, aut
           <div className="candidate-footer__col">
             <h4>Dành cho Nhà tuyển dụng</h4>
             <a href="#">Đăng tin tuyển dụng</a>
-            <a href="#">AI Matching</a>
             <a href="#">Quản lý ứng viên</a>
             <a href="#">Báo cáo tuyển dụng</a>
           </div>

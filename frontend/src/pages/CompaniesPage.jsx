@@ -390,7 +390,7 @@ export default function CompaniesPage({ currentUser, onLogout, onNavigate }) {
           <div className="candidate-footer__col">
             <h4>Dành cho Nhà tuyển dụng</h4>
             <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('jobs'); }}>Đăng tin tuyển dụng</a>
-            <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('jobs'); }}>AI Matching</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('candidates'); }}>Quản lý ứng viên</a>
           </div>
 
           <div className="candidate-footer__col">
