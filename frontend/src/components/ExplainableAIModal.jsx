@@ -5,6 +5,7 @@
 
 import RadarChartComponent from './RadarChart';
 import UnifiedCriteriaAssessment from './UnifiedCriteriaAssessment';
+import { getAvatarUrl } from '../services/api';
 
 const SEVERITY_CONFIG = {
   high:   { color: '#ef4444', bg: '#fef2f2', icon: '🔴', label: 'Quan trọng' },
@@ -223,6 +224,30 @@ export default function ExplainableAIModal({ result, onClose }) {
                         <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
                           " {ev.evidence_quote} "
                         </div>
+                        {ev.evidence_file_url && (
+                          <div style={{ marginTop: '8px' }}>
+                            <a 
+                              href={getAvatarUrl(ev.evidence_file_url)}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: '#15803d',
+                                background: '#dcfce7',
+                                padding: '3px 10px',
+                                borderRadius: '6px',
+                                textDecoration: 'none'
+                              }}
+                              title="Xem tệp minh chứng ứng viên đã tải lên"
+                            >
+                              📎 Xem tệp minh chứng: {ev.evidence_file_name || 'Tài liệu đối chứng'} ↗
+                            </a>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

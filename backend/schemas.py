@@ -483,11 +483,13 @@ class DeclaredEvidenceItem(BaseModel):
     """Bằng chứng chi tiết cho khoảng trống tiêu chí (Micro-Evidence)."""
     pillar: str = "skills"  # 'skills' | 'experience' | 'projects' | 'education'
     item_name: str
-    context_type: str = "academic_project"  # 'academic_project' | 'company_work' | 'freelance' | 'self_study' | 'certification'
-    description: str
+    context_type: Optional[str] = "academic_project"  # 'academic_project' | 'company_work' | 'freelance' | 'self_study' | 'certification'
+    description: Optional[str] = ""
     reference_link: Optional[str] = None
     duration_or_period: Optional[str] = None
     organization: Optional[str] = None
+    evidence_file_url: Optional[str] = None      # Đường dẫn ảnh / tệp minh chứng upload
+    evidence_file_name: Optional[str] = None     # Tên file gốc
 
 
 class QuickChallengeQuestion(BaseModel):
@@ -516,13 +518,15 @@ class EvidenceAuditItem(BaseModel):
     audit_reason: str
     awarded_level: int = 2  # 0..4
     evidence_quote: Optional[str] = None
+    evidence_file_url: Optional[str] = None
+    evidence_file_name: Optional[str] = None
 
 
 class AuditAndChallengeGenerateRequest(BaseModel):
     """Request thẩm định bằng chứng và sinh bài kiểm chứng nhanh."""
-    cv_id: int
+    cv_id: Optional[int] = None
     jd_id: int
-    declared_evidences: list[DeclaredEvidenceItem]
+    declared_evidences: list[DeclaredEvidenceItem] = []
     custom_instructions: Optional[str] = None
 
 

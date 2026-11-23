@@ -60,16 +60,33 @@ export function getAvatarUrl(url) {
  */
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
+  const isFormData = options.body instanceof FormData;
+  
+  const headers = { ...(options.headers || {}) };
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const config = {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers,
   };
 
   const response = await fetch(url, config);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    const error = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
+    let errorMsg = `HTTP ${response.status}`;
+    if (typeof error.detail === 'string') {
+      errorMsg = error.detail;
+    } else if (Array.isArray(error.detail)) {
+      errorMsg = error.detail.map(d => `${d.loc ? d.loc.slice(1).join('.') + ': ' : ''}${d.msg}`).join('; ');
+    } else if (typeof error === 'string') {
+      errorMsg = error;
+    } else if (error.message) {
+      errorMsg = error.message;
+    }
+    throw new Error(errorMsg);
   }
 
   return response.json();
@@ -154,6 +171,15 @@ export async function createCandidate(data) {
 }
 
 // AI CV OPTIMIZER & VERIFICATION (Tối ưu hóa CV theo JD mục tiêu & Thẩm định Minh bạch)
+export async function uploadEvidenceFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request('/evidence/upload', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
 export async function auditAndGenerateChallenge(candidateId, data) {
   return request(`/candidates/${candidateId}/audit-and-challenge`, {
     method: 'POST',

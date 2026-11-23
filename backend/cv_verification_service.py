@@ -13,6 +13,8 @@ Nhiệm vụ của bạn: Thẩm định tính trung thực, hợp lý và độ
 
 NGUYÊN TẮC THẨM ĐỊNH KHÁCH QUAN & MINH BẠCH:
 1. PHÁT HIỆN GIAN LẬN & KHAI BÁO KHỐNG (Anti-Gaming / Anti-Fake):
+   - Nếu ứng viên đính kèm tệp/ảnh minh chứng hợp lệ (evidence_file_url hoặc bằng cấp, chứng chỉ, bảng điểm, screenshot source code/demo):
+     -> Đánh giá cao tính xác thực: credibility_score >= 0.90, verdict = 'verified_high', awarded_level = 3 hoặc 4.
    - Nếu ứng viên chỉ nêu chung chung kiểu "em có biết sơ qua", "đã đọc tài liệu", "tự học trên youtube" mà không có mô tả bài toán, module kỹ thuật hoặc sản phẩm cụ thể:
      -> Chấm credibility_score <= 0.3, verdict = 'insufficient', awarded_level = 0 hoặc 1.
    - Nếu ứng viên mô tả rõ bài toán thực tế (đồ án tốt nghiệp, bài tập lớn, dự án freelance, công việc ở cty cũ) với các thuật ngữ chuyên sâu, logic kiến trúc hợp lý:
@@ -234,6 +236,26 @@ Hãy thẩm định và trả về JSON theo đúng định dạng sau:
                             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
                             cleaned = re.sub(r"\s*```$", "", cleaned)
                         parsed = json.loads(cleaned)
+                        
+                        # Đồng bộ hóa evidence_file_url và evidence_file_name từ declared_evidences
+                        file_lookup = {}
+                        for de in declared_evidences:
+                            k = (de.get("item_name") or "").strip().lower()
+                            file_lookup[k] = {
+                                "url": de.get("evidence_file_url"),
+                                "name": de.get("evidence_file_name")
+                            }
+
+                        for ae in parsed.get("audited_evidences", []):
+                            ck = (ae.get("criterion_name") or "").strip().lower()
+                            if ck in file_lookup and file_lookup[ck]["url"]:
+                                ae["evidence_file_url"] = file_lookup[ck]["url"]
+                                ae["evidence_file_name"] = file_lookup[ck]["name"]
+                                if ae.get("credibility_score", 0) < 0.90:
+                                    ae["credibility_score"] = 0.95
+                                    ae["verdict"] = "verified_high"
+                                    ae["awarded_level"] = max(ae.get("awarded_level", 2), 4)
+
                         print(f"[CV Verification] Gemini ({m}) đã thẩm định thành công {len(declared_evidences)} bằng chứng.")
                         return parsed
                 except Exception as ex:
@@ -271,25 +293,38 @@ def _smart_fallback_audit(
         link = item.get("reference_link", "").strip()
 
         desc_len = len(desc)
+        file_url = item.get("evidence_file_url", "").strip()
+        file_name = item.get("evidence_file_name", "").strip()
+        has_file = bool(file_url)
         has_link = bool(re.match(r"^https?://", link, re.IGNORECASE))
-        has_tech_keywords = any(kw in desc.lower() for kw in ["api", "module", "tối ưu", "xử lý", "cơ sở dữ liệu", "test", "deploy", "ci/cd", "thuật toán", "framework"])
+        has_tech_keywords = any(kw in desc.lower() for kw in ["api", "module", "tối ưu", "xử lý", "cơ sở dữ liệu", "test", "deploy", "ci/cd", "thuật toán", "framework", "kinh nghiệm", "automation", "selenium", "playwright", "backend", "frontend"])
 
         # Đánh giá độ tin cậy
-        if has_link and desc_len >= 40:
+        if has_file and desc_len >= 15:
+            cred = 0.95
+            verdict = "verified_high"
+            awarded_level = 4
+            reason = f"Ứng viên đã đính kèm tệp/ảnh minh chứng xác thực ({file_name or 'Tài liệu đối chứng'}) kèm mô tả nghiệp vụ cụ thể."
+        elif has_file:
+            cred = 0.90
+            verdict = "verified_high"
+            awarded_level = 3
+            reason = f"Ứng viên đã đính kèm tệp/ảnh minh chứng ({file_name or 'Tài liệu đối chứng'})."
+        elif has_link and desc_len >= 30:
             cred = 0.90
             verdict = "verified_high"
             awarded_level = 3
             reason = f"Ứng viên cung cấp link tham chiếu hợp lệ ({link}) và mô tả kỹ thuật cụ thể ({desc_len} ký tự)."
-        elif desc_len >= 50 or (desc_len >= 25 and has_tech_keywords):
+        elif desc_len >= 35 or (desc_len >= 15 and has_tech_keywords):
             cred = 0.75
             verdict = "verified_plausible"
             awarded_level = 2
             reason = f"Mô tả nghiệp vụ và bài toán rõ ràng trong ngữ cảnh {ctx}."
-        elif desc_len >= 15:
-            cred = 0.45
+        elif desc_len >= 10:
+            cred = 0.50
             verdict = "partially_accepted"
             awarded_level = 1
-            reason = "Mô tả còn ngắn gọn hoặc mang tính đại cương; được ghi nhận ở mức độ tiềm năng."
+            reason = "Mô tả còn ngắn gọn; được ghi nhận ở mức độ tiềm năng."
         else:
             cred = 0.20
             verdict = "insufficient"
@@ -304,7 +339,9 @@ def _smart_fallback_audit(
             "verdict": verdict,
             "audit_reason": reason,
             "awarded_level": awarded_level,
-            "evidence_quote": desc[:150] if desc else f"Khai báo bổ sung cho {name}"
+            "evidence_quote": desc[:150] if desc else f"Khai báo bổ sung cho {name}",
+            "evidence_file_url": file_url or None,
+            "evidence_file_name": file_name or None
         })
 
         # Tạo câu hỏi phỏng vấn probe kit cho Recruiter

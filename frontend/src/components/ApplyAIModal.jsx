@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchMyCVs, runMatch1To1, uploadCV, applyJob, optimizeCVForJD, saveOptimizedCV, auditAndGenerateChallenge } from '../services/api';
+import { fetchMyCVs, runMatch1To1, uploadCV, applyJob, optimizeCVForJD, saveOptimizedCV, auditAndGenerateChallenge, uploadEvidenceFile, getAvatarUrl } from '../services/api';
 import UnifiedCriteriaAssessment from './UnifiedCriteriaAssessment';
 
 export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
@@ -18,6 +18,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
   const [declaredEvidences, setDeclaredEvidences] = useState({});
   const [customInstructions, setCustomInstructions] = useState('');
   const [isAuditing, setIsAuditing] = useState(false);
+  const [uploadingKeys, setUploadingKeys] = useState({});
   const [challengeQuestions, setChallengeQuestions] = useState([]);
   const [challengeAnswers, setChallengeAnswers] = useState({});
   const [auditOverview, setAuditOverview] = useState(null);
@@ -232,15 +233,109 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
     setStep('confirm-gaps');
   }
 
+  // Xử lý upload tệp/ảnh minh chứng cho từng tiêu chí
+  async function handleUploadProofFile(key, file) {
+    if (!file) return;
+    setUploadingKeys(prev => ({ ...prev, [key]: true }));
+    setError(null);
+    try {
+      const res = await uploadEvidenceFile(file);
+      if (res && res.file_url) {
+        setDeclaredEvidences(prev => {
+          const cur = prev[key] || {};
+          return {
+            ...prev,
+            [key]: {
+              ...cur,
+              confirmed: true, // Tự động đánh dấu đã chọn khi đính kèm file
+              evidence_file_url: res.file_url,
+              evidence_file_name: res.file_name
+            }
+          };
+        });
+      }
+    } catch (err) {
+      const msg = typeof err?.message === 'string' ? err.message : String(err || 'Không thể tải file');
+      setError('Lỗi tải tệp minh chứng: ' + msg);
+    } finally {
+      setUploadingKeys(prev => ({ ...prev, [key]: false }));
+    }
+  }
+
+  // Render khu vực upload file/ảnh minh chứng dùng chung cho các thẻ tiêu chí
+  function renderProofUploadBox(key, ev) {
+    const isUploading = uploadingKeys[key];
+    return (
+      <div style={{ marginTop: '8px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '8px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+          <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+            <span>📎</span>
+            <span>Đính kèm Ảnh / Tệp minh chứng (Bằng cấp, Chứng chỉ, Bảng điểm, Ảnh chụp Demo/Code):</span>
+          </label>
+
+          {ev.evidence_file_url ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <a 
+                href={getAvatarUrl(ev.evidence_file_url)} 
+                target="_blank" 
+                rel="noreferrer"
+                style={{ fontSize: '11px', color: '#15803d', fontWeight: 600, background: '#dcfce7', padding: '2px 8px', borderRadius: '4px', textDecoration: 'none' }}
+                title="Bấm để xem tệp đã tải lên"
+              >
+                ✓ {ev.evidence_file_name || 'Đã đính kèm tệp'} ↗
+              </a>
+              <button 
+                type="button"
+                onClick={() => setDeclaredEvidences(prev => ({ ...prev, [key]: { ...ev, evidence_file_url: null, evidence_file_name: null } }))}
+                style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '2px 4px' }}
+              >
+                ✕ Xóa
+              </button>
+            </div>
+          ) : (
+            <label style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 10px',
+              background: '#ffffff',
+              border: '1px solid #cbd5e1',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: '#475569',
+              cursor: isUploading ? 'not-allowed' : 'pointer'
+            }}>
+              <input 
+                type="file" 
+                accept="image/*,.pdf,.doc,.docx"
+                style={{ display: 'none' }}
+                disabled={isUploading}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleUploadProofFile(key, e.target.files[0]);
+                  }
+                }}
+              />
+              <span>{isUploading ? '⏳ Đang tải lên...' : '📷 Chọn ảnh / Tệp từ máy'}</span>
+            </label>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Bước 2: Chuyển sang thẩm định và làm Quick Tech Check
   async function handleProceedToAudit() {
     setError(null);
     const confirmedList = Object.values(declaredEvidences).filter(item => item.confirmed);
 
-    // Kiểm tra tính xác thực sơ bộ: nếu đã tick chọn thì phải có mô tả cụ thể
+    // Kiểm tra tính xác thực sơ bộ: nếu đã tick chọn thì phải có mô tả cụ thể HOẶC có file minh chứng đính kèm
     for (const item of confirmedList) {
-      if (!item.description || item.description.trim().length < 15) {
-        setError(`Vui lòng nhập mô tả chi tiết (tối thiểu 15 ký tự) cho tiêu chí "${item.item_name}" để AI có căn cứ thẩm định.`);
+      const hasFile = Boolean(item.evidence_file_url);
+      const descLen = (item.description || '').trim().length;
+      if (!hasFile && descLen < 15) {
+        setError(`Vui lòng nhập mô tả chi tiết (tối thiểu 15 ký tự) hoặc đính kèm ảnh/file minh chứng cho tiêu chí "${item.item_name}".`);
         return;
       }
     }
@@ -256,6 +351,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
     setIsAuditing(true);
     try {
       const auditRes = await auditAndGenerateChallenge(cvId, {
+        cv_id: Number(cvId),
         jd_id: Number(job.id),
         declared_evidences: confirmedList,
         custom_instructions: customInstructions.trim() || null
@@ -277,7 +373,8 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
       }
     } catch (err) {
       setIsAuditing(false);
-      setError('Lỗi khi thẩm định bằng chứng: ' + (err.message || 'Không thể kết nối máy chủ AI'));
+      const msg = typeof err?.message === 'string' ? err.message : (typeof err === 'object' ? JSON.stringify(err) : String(err || 'Không thể kết nối máy chủ AI'));
+      setError('Lỗi khi thẩm định bằng chứng: ' + msg);
     }
   }
 
@@ -767,6 +864,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                                 style={{ fontSize: '0.82rem', padding: '6px 8px' }}
                               />
                             </div>
+                            {renderProofUploadBox(key, ev)}
                           </div>
                         )}
                       </div>
@@ -849,6 +947,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                                 style={{ fontSize: '0.82rem', padding: '6px 8px' }}
                               />
                             </div>
+                            {renderProofUploadBox(key, ev)}
                           </div>
                         )}
                       </div>
@@ -919,6 +1018,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                               style={{ fontSize: '0.82rem', padding: '6px 8px' }}
                             />
                           </div>
+                          {renderProofUploadBox(key, ev)}
                         </div>
                       )}
                     </div>
@@ -995,6 +1095,7 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                               style={{ fontSize: '0.82rem', padding: '6px 8px' }}
                             />
                           </div>
+                          {renderProofUploadBox(key, ev)}
                         </div>
                       )}
                     </div>
@@ -1396,6 +1497,30 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                             <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic', background: '#f8fafc', padding: '6px 10px', borderRadius: '6px' }}>
                               " {item.evidence_quote} "
                             </div>
+                            {item.evidence_file_url && (
+                              <div style={{ marginTop: '8px' }}>
+                                <a 
+                                  href={getAvatarUrl(item.evidence_file_url)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    color: '#15803d',
+                                    background: '#dcfce7',
+                                    padding: '3px 10px',
+                                    borderRadius: '6px',
+                                    textDecoration: 'none'
+                                  }}
+                                  title="Xem tệp / ảnh minh chứng gốc"
+                                >
+                                  📎 Xem tệp minh chứng: {item.evidence_file_name || 'Tài liệu đối chứng'} ↗
+                                </a>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

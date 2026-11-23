@@ -1179,6 +1179,40 @@ def upload_cv(user_id: int = Form(...), file: UploadFile = File(...), db: Sessio
 # ==============================================================================
 # AI CV OPTIMIZER FOR JD (DÙNG AI TỐI ƯU LẠI CV THEO JD & THẨM ĐỊNH MINH BẠCH)
 # ==============================================================================
+@app.post("/api/evidence/upload")
+def upload_evidence_file(
+    file: UploadFile = File(...)
+):
+    """
+    Tải lên file ảnh hoặc tài liệu chứng minh năng lực (Micro-Evidence):
+    - Hỗ trợ: JPG, PNG, WEBP, PDF, DOCX
+    - Lưu vào backend/uploads/evidence/
+    - Trả về đường dẫn tĩnh để xem lại và phân tích
+    """
+    evidence_dir = os.path.join(UPLOAD_DIR, "evidence")
+    os.makedirs(evidence_dir, exist_ok=True)
+
+    filename = file.filename or "evidence.jpg"
+    ext = os.path.splitext(filename)[1].lower()
+    allowed = [".jpg", ".jpeg", ".png", ".webp", ".pdf", ".docx", ".doc"]
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail=f"Định dạng file không hỗ trợ ({ext}). Chỉ chấp nhận: JPG, PNG, WEBP, PDF, DOCX.")
+
+    safe_name = f"ev_{int(datetime.utcnow().timestamp())}_{filename.replace(' ', '_')}"
+    file_path = os.path.join(evidence_dir, safe_name)
+
+    with open(file_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    file_url = f"/uploads/evidence/{safe_name}"
+    return {
+        "success": True,
+        "file_url": file_url,
+        "file_name": filename,
+        "content_type": file.content_type
+    }
+
+
 @app.post("/api/candidates/{candidate_id}/audit-and-challenge", response_model=AuditAndChallengeGenerateResponse)
 def audit_and_generate_challenge(
     candidate_id: int,
