@@ -22,6 +22,20 @@ ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, 
  * Normalizes values to 0-1 range for display.
  */
 function normalizeFeatures(features) {
+  // Ưu tiên hiển thị 4 trụ cột đánh giá toàn diện nếu có
+  if (features && features.pillar_scores) {
+    const ps = features.pillar_scores;
+    return {
+      labels: ['⚡ Kỹ năng', '💼 Kinh nghiệm', '🚀 Dự án thực tế', '🎓 Học vấn & Bằng cấp'],
+      values: [
+        Math.min(1, Math.max(0, (ps.skills || 0) / 100)),
+        Math.min(1, Math.max(0, (ps.experience || 0) / 100)),
+        Math.min(1, Math.max(0, (ps.projects || 0) / 100)),
+        Math.min(1, Math.max(0, (ps.education || 0) / 100))
+      ]
+    };
+  }
+
   const labels = [];
   const values = [];
 

@@ -2134,6 +2134,9 @@ def match_one_to_one(request: Match1To1Request, db: Session = Depends(get_db)):
         gaps=gaps,
         custom_criteria_results=result.get("custom_criteria_results", []),
         skill_details=result.get("skill_details", []),
+        pillar_scores=result.get("pillar_scores") or result.get("feature_details", {}).get("pillar_scores"),
+        all_criteria_details=result.get("all_criteria_details") or result.get("feature_details", {}).get("all_criteria_details"),
+        candidate_summary=result.get("candidate_summary") or result.get("feature_details", {}).get("candidate_summary"),
     )
 
 @app.post("/api/match/1-to-n", response_model=Match1ToNResponse)
@@ -2244,6 +2247,9 @@ def match_one_to_n(request: Match1ToNRequest, db: Session = Depends(get_db)):
             gaps=gaps,
             custom_criteria_results=result.get("custom_criteria_results", []),
             skill_details=result.get("skill_details", []),
+            pillar_scores=result.get("pillar_scores") or result.get("feature_details", {}).get("pillar_scores"),
+            all_criteria_details=result.get("all_criteria_details") or result.get("feature_details", {}).get("all_criteria_details"),
+            candidate_summary=result.get("candidate_summary") or result.get("feature_details", {}).get("candidate_summary"),
         ))
 
     db.commit()
@@ -2353,6 +2359,9 @@ def match_n_to_one(request: MatchNTo1Request, db: Session = Depends(get_db)):
             custom_criteria_results=match.custom_criteria_results or [],
             skill_details=match.skill_details or [],
             is_best_match=is_best,
+            pillar_scores=(match.feature_details or {}).get("pillar_scores"),
+            all_criteria_details=(match.feature_details or {}).get("all_criteria_details"),
+            candidate_summary=(match.feature_details or {}).get("candidate_summary"),
         ))
 
     total_time_ms = round((time.time() - start_time) * 1000, 2)
@@ -2415,6 +2424,10 @@ def get_match_results(cv_id: int, db: Session = Depends(get_db)):
             job_required_skills=jd.required_skills if jd else [],
             gaps=gaps,
             custom_criteria_results=r.custom_criteria_results or [],
+            skill_details=r.skill_details or [],
+            pillar_scores=(r.feature_details or {}).get("pillar_scores"),
+            all_criteria_details=(r.feature_details or {}).get("all_criteria_details"),
+            candidate_summary=(r.feature_details or {}).get("candidate_summary"),
         ))
 
     return response
@@ -2693,6 +2706,9 @@ def evaluate_generated_cv_match(cv_id: int, req: CVEvaluateMatchRequest, db: Ses
         "gaps": raw_gaps,
         "custom_criteria_results": result.get("custom_criteria_results", []),
         "skill_details": result.get("skill_details", []),
+        "pillar_scores": result.get("pillar_scores") or result.get("feature_details", {}).get("pillar_scores"),
+        "all_criteria_details": result.get("all_criteria_details") or result.get("feature_details", {}).get("all_criteria_details"),
+        "candidate_summary": result.get("candidate_summary") or result.get("feature_details", {}).get("candidate_summary"),
     }
 
 

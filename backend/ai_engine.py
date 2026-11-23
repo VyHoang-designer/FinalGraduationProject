@@ -225,82 +225,60 @@ class AIMatchingEngine:
 
     def match_cv_to_jd(self, cv_data: dict, jd_data: dict) -> dict:
         """
-        Đánh giá 1 cặp CV-JD.
+        Đánh giá 1 cặp CV-JD theo cơ chế Unified Multi-Criteria Scoring (Single-Pass LLM).
+        Đánh giá toàn diện 4 trụ cột: Kỹ năng, Kinh nghiệm, Dự án, Học vấn.
         """
-        from skill_llm_service import evaluate_skills
-        from skill_scoring import calculate_skill_score
+        from unified_llm_service import evaluate_cv_against_jd_unified
+        from unified_scoring import calculate_unified_composite_score
         
-        # 1. Trích xuất features cơ bản
+        # 1. Trích xuất features cơ bản từ Pipeline Heuristic
         features = self.pipeline.tinh_toan_toan_bo_tieu_chi(cv_data, jd_data)
 
-        # 2. Gọi Gemini đánh giá kỹ năng
-        req_skills_raw = jd_data.get("required_skills", [])
-        requirements = []
-        for s in req_skills_raw:
-            if isinstance(s, dict):
-                requirements.append({"skill": s.get("skill", ""), "importance": s.get("importance", "core")})
-            else:
-                requirements.append({"skill": str(s), "importance": "core"})
+        # 2. Gọi Unified LLM Service thẩm định toàn diện 4 trụ cột trong 1 lượt duy nhất
+        raw_unified = evaluate_cv_against_jd_unified(cv_data, jd_data)
+        unified_res = calculate_unified_composite_score(raw_unified)
 
-        cv_sources = []
-        if cv_data.get("cv_text"):
-            cv_sources.append({"source_id": "cv", "section": "full_text", "text": cv_data["cv_text"]})
-        if cv_data.get("project_descriptions"):
-            for idx, p in enumerate(cv_data["project_descriptions"]):
-                cv_sources.append({"source_id": f"proj_{idx}", "section": "projects", "text": p})
+        pillar_scores = unified_res.get("pillar_scores") or {}
+        features["Skill_Fit_Score"] = pillar_scores.get("skills", 0.0) / 100.0
+        features["Exp_Fit_Score"] = pillar_scores.get("experience", 0.0) / 100.0
+        features["Project_Fit_Score"] = pillar_scores.get("projects", 0.0) / 100.0
+        features["Edu_Fit_Score"] = pillar_scores.get("education", 0.0) / 100.0
+        features["Skill_Applicable"] = 1.0 if unified_res.get("skill_details") else 0.0
 
-        skill_details_info = []
-        if requirements:
-            try:
-                assessments = evaluate_skills(cv_sources, requirements)
-                skill_result = calculate_skill_score(requirements, assessments)
-                features["Skill_Fit_Score"] = skill_result.get("skill_fit_score", 0.0)
-                features["Skill_Applicable"] = 1.0
-                skill_details_info = skill_result.get("skill_details", [])
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str:
-                    print("  [AIEngine] LLM Assessment Error: Hết Quota (429). Chuyển sang chấm điểm dự phòng.")
-                else:
-                    print(f"  [AIEngine] LLM Assessment Error: {err_str[:150]}...")
-                # Heuristic fallback cho skill_details khi LLM gặp lỗi/hết quota
-                cv_full_lower = (cv_data.get("cv_text") or "").lower()
-                skill_details_info = []
-                for req in requirements:
-                    s_name = req["skill"]
-                    weight = 3 if req.get("importance") == "core" else 2 if req.get("importance") == "supporting" else 1
-                    found = s_name.lower() in cv_full_lower
-                    skill_details_info.append({
-                        "skill": s_name,
-                        "weight": weight,
-                        "m": 0.5 if found else 0.0,
-                        "reason": f"Từ khóa xuất hiện trong CV (Fallback heuristic)" if found else "Không tìm thấy từ khóa trong CV",
-                        "evidence": [{"source_id": "cv", "quote": s_name}] if found else []
-                    })
-                features["Skill_Fit_Score"] = features.get("Skill_Match_Ratio", 0.0)
-                features["Skill_Applicable"] = 1.0 if skill_details_info else 0.0
-        else:
-            features["Skill_Fit_Score"] = 0.0
-            features["Skill_Applicable"] = 0.0
+        # Lưu các thông tin phân tích chi tiết vào features (tự động lưu vào JSON column DB)
+        features["pillar_scores"] = pillar_scores
+        features["all_criteria_details"] = unified_res.get("all_criteria_details") or {}
+        features["candidate_summary"] = unified_res.get("candidate_summary") or ""
 
-        # Dự đoán điểm
-        score = self.predict_score(features)
+        # 3. Dự đoán điểm tổng hợp:
+        # Kết hợp điểm Random Forest với Unified Composite Score (65% Unified LLM + 35% ML Random Forest)
+        rf_score = self.predict_score(features)
+        unified_overall = unified_res.get("overall_score", 0.0)
         
-        # Áp dụng Hybrid Scoring (custom criteria)
+        if rf_score is not None and rf_score > 0:
+            combined_score = round(0.65 * unified_overall + 0.35 * rf_score, 1)
+        else:
+            combined_score = round(unified_overall, 1)
+
+        # Áp dụng Hybrid Scoring (custom criteria nếu có)
         custom_criteria = jd_data.get("custom_criteria", [])
         custom_criteria_results = []
         if custom_criteria:
-            score, custom_criteria_results = self.apply_hybrid_scoring(score, cv_data.get("cv_text", ""), custom_criteria)
+            combined_score, custom_criteria_results = self.apply_hybrid_scoring(combined_score, cv_data.get("cv_text", ""), custom_criteria)
 
-        # Phân loại
-        level = self.classify_match_level(score)
+        # Phân loại mức độ phù hợp
+        level = self.classify_match_level(combined_score)
 
         return {
             "feature_details": features,
-            "match_score": score if score is not None else 0.0,
+            "match_score": combined_score if combined_score is not None else 0.0,
             "match_level": level,
             "custom_criteria_results": custom_criteria_results,
-            "skill_details": skill_details_info
+            "skill_details": unified_res.get("skill_details") or [],
+            "pillar_scores": pillar_scores,
+            "all_criteria_details": unified_res.get("all_criteria_details") or {},
+            "flat_criteria": unified_res.get("flat_criteria") or [],
+            "candidate_summary": unified_res.get("candidate_summary") or ""
         }
 
     def match_cv_to_all_jds(self, cv_data: dict, jd_list: list[dict]) -> tuple[list[dict], float]:

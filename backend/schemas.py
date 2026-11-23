@@ -152,6 +152,9 @@ class MatchResultResponse(BaseModel):
     gaps: list[GapItem] = []
     custom_criteria_results: list[dict] = []
     skill_details: list[dict] = []
+    pillar_scores: Optional[dict] = None
+    all_criteria_details: Optional[dict] = None
+    candidate_summary: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -167,6 +170,8 @@ class ApplyJobRequest(BaseModel):
     feature_details: Optional[dict] = None
     custom_criteria_results: Optional[list[dict]] = None
     skill_details: Optional[list[dict]] = None
+    pillar_scores: Optional[dict] = None
+    all_criteria_details: Optional[dict] = None
 
 
 # ==============================================================================
@@ -206,6 +211,9 @@ class CandidateMatchResult(BaseModel):
     custom_criteria_results: list[dict] = []
     skill_details: list[dict] = []
     is_best_match: bool = False    # True if rank == 1
+    pillar_scores: Optional[dict] = None
+    all_criteria_details: Optional[dict] = None
+    candidate_summary: Optional[str] = None
 
 
 class MatchNTo1Request(BaseModel):

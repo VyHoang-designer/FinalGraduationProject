@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchMyCVs, runMatch1To1, uploadCV, applyJob, optimizeCVForJD, saveOptimizedCV } from '../services/api';
+import UnifiedCriteriaAssessment from './UnifiedCriteriaAssessment';
 
 export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
   const [candidates, setCandidates] = useState([]);
@@ -424,44 +425,11 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
               </div>
             )}
 
-            {/* Đánh giá kỹ năng AI (Gemini LLM) */}
-            {result.skill_details && result.skill_details.length > 0 && (
-              <div className="ai-result-section" style={{ marginTop: '24px' }}>
-                <div className="ai-result-section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>🤖</span> ĐÁNH GIÁ KỸ NĂNG AI (GEMINI LLM)
-                </div>
-                <div className="feature-table" style={{ marginTop: '10px' }}>
-                  <div className="feature-table__header" style={{ gridTemplateColumns: '1.2fr 0.8fr 2fr' }}>
-                    <span>KỸ NĂNG & TRỌNG SỐ</span>
-                    <span>MỨC ĐỘ (M)</span>
-                    <span>LÝ DO & BẰNG CHỨNG TỪ CV</span>
-                  </div>
-                  {result.skill_details.map((s, idx) => (
-                    <div key={idx} className="feature-table__row" style={{ gridTemplateColumns: '1.2fr 0.8fr 2fr' }}>
-                      <div>
-                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{s.skill}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>Trọng Số: {s.importance === 'core' ? 'Cốt Lõi (x3)' : s.importance === 'supporting' ? 'Bổ Trợ (x2)' : 'Ưu Tiên (x1)'}</div>
-                      </div>
-                      <div>
-                        <span style={{ 
-                          fontSize: '11px', 
-                          fontWeight: 700, 
-                          color: s.level === 'Mức 3' ? '#15803d' : s.level === 'Mức 2' ? '#0369a1' : s.level === 'Mức 1' ? '#b45309' : '#b91c1c',
-                          background: s.level === 'Mức 3' ? '#dcfce7' : s.level === 'Mức 2' ? '#e0f2fe' : s.level === 'Mức 1' ? '#fef3c7' : '#fee2e2',
-                          padding: '3px 8px',
-                          borderRadius: '6px'
-                        }}>
-                          {s.level} (m={s.m})
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
-                        <strong>Lý do:</strong> {s.reason || 'Không có mô tả'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Đánh giá đa tiêu chí toàn diện bằng AI (Skills, Exp, Projects, Education) */}
+            <UnifiedCriteriaAssessment 
+              result={result} 
+              title="ĐÁNH GIÁ ĐA TIÊU CHÍ AI (GEMINI LLM)" 
+            />
 
             {/* Tiêu chí đặc thù HR */}
             {result.custom_criteria_results && result.custom_criteria_results.length > 0 && (

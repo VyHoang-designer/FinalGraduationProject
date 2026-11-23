@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { fetchJobCandidates, updateCandidateStatus, getAvatarUrl } from '../services/api';
 import ScheduleInterviewModal from './ScheduleInterviewModal';
+import UnifiedCriteriaAssessment from './UnifiedCriteriaAssessment';
 
 const PIPELINE_STAGES = [
   { key: 'all', label: 'Tất cả', color: '#64748b' },
@@ -380,48 +381,11 @@ export default function AppliedCandidatesModal({ job, initialStage = 'applied', 
                     {/* EXPANDED AI DETAILS ACCORDION */}
                     {isExpanded && (
                       <div style={{ borderTop: '1px solid #e2e8f0', background: '#f8fafc', padding: '20px' }}>
-                        {/* 🤖 Đánh giá Chuyên sâu Kỹ năng từ LLM (Gemini) */}
-                        {c.skill_details && c.skill_details.length > 0 ? (
-                          <div style={{ marginBottom: '20px' }}>
-                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                              <span>🤖</span> Đánh giá Kỹ năng AI (Gemini LLM đã lưu trong DB)
-                            </div>
-                            <div className="feature-table">
-                              <div className="feature-table__header" style={{ gridTemplateColumns: '1.4fr 1fr 3fr' }}>
-                                <span>Kỹ năng & Trọng số</span>
-                                <span>Mức độ (m)</span>
-                                <span>Lý do & Bằng chứng từ CV</span>
-                              </div>
-                              {c.skill_details.map((info, idx) => (
-                                <div key={idx} className="feature-table__row" style={{ gridTemplateColumns: '1.4fr 1fr 3fr', alignItems: 'start', padding: '10px 12px' }}>
-                                  <div style={{ fontWeight: '600', textTransform: 'capitalize' }}>
-                                    {info.skill}
-                                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal', marginTop: '2px' }}>
-                                      Trọng số: {info.weight === 3 ? 'Cốt lõi (x3)' : info.weight === 2 ? 'Bổ trợ (x2)' : 'Ưu tiên (x1)'}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <span className={`badge ${info.m >= 0.75 ? 'badge--success' : info.m >= 0.5 ? 'badge--info' : info.m > 0 ? 'badge--warning' : 'badge--danger'}`}>
-                                      Mức {Math.round(info.m * 4)} (m={info.m})
-                                    </span>
-                                  </div>
-                                  <div style={{ fontSize: '12px', color: '#334155', lineHeight: '1.45' }}>
-                                    <div style={{ marginBottom: '4px' }}><strong>Lý do:</strong> {info.reason}</div>
-                                    {info.evidence && info.evidence.length > 0 && (
-                                      <div style={{ fontStyle: 'italic', color: '#475569', fontSize: '11px', background: '#f1f5f9', padding: '6px 8px', borderRadius: '4px', borderLeft: '3px solid #3b82f6' }}>
-                                        <strong>Trích dẫn CV:</strong> "{info.evidence[0].quote}"
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '16px' }}>
-                            <em>Chưa có dữ liệu đánh giá chuyên sâu kỹ năng LLM cho hồ sơ này.</em>
-                          </div>
-                        )}
+                        {/* 🤖 Đánh giá Đa Tiêu chí Toàn diện từ LLM (Gemini) */}
+                        <UnifiedCriteriaAssessment 
+                          result={c} 
+                          title="Đánh giá Đa Tiêu chí AI (Gemini LLM đã lưu trong DB)" 
+                        />
 
                         {/* Tiêu chí đặc thù */}
                         {c.custom_criteria_results && c.custom_criteria_results.length > 0 && (

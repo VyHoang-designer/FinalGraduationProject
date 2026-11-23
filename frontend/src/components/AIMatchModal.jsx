@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { getAvatarUrl } from '../services/api';
+import UnifiedCriteriaAssessment from './UnifiedCriteriaAssessment';
 
 const SEVERITY_CONFIG = {
   high:   { color: '#ef4444', bg: '#fef2f2', icon: '🔴', label: 'Quan trọng' },
@@ -151,40 +152,11 @@ function CandidateRow({ result, isExpanded, onToggle, onViewDetail }) {
             </div>
           </div>
 
-          {/* LLM Skill Assessment */}
-          {skill_details && skill_details.length > 0 && (
-            <div className="match-cv-card__detail-section">
-              <h4>🤖 Đánh giá Kỹ năng AI (Gemini)</h4>
-              <div className="feature-table">
-                <div className="feature-table__header" style={{ gridTemplateColumns: '1.5fr 1fr 3fr' }}>
-                  <span>Kỹ năng</span>
-                  <span>Mức độ (m)</span>
-                  <span>Lý do & Bằng chứng</span>
-                </div>
-                {skill_details.map((info, idx) => (
-                  <div key={idx} className="feature-table__row" style={{ gridTemplateColumns: '1.5fr 1fr 3fr', alignItems: 'start' }}>
-                    <div style={{ fontWeight: 'bold', textTransform: 'capitalize' }}>
-                      {info.skill}
-                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal' }}>Weight: {info.weight}</div>
-                    </div>
-                    <div>
-                      <span className={`badge ${info.m >= 0.75 ? 'badge--success' : info.m >= 0.5 ? 'badge--info' : info.m > 0 ? 'badge--warning' : 'badge--danger'}`}>
-                        Mức {info.m * 4} (m={info.m})
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.4' }}>
-                      <div style={{ marginBottom: '4px' }}><strong>Lý do:</strong> {info.reason}</div>
-                      {info.evidence && info.evidence.length > 0 && (
-                        <div style={{ fontStyle: 'italic', color: '#64748b', fontSize: '12px', background: '#f8fafc', padding: '6px', borderRadius: '4px' }}>
-                          <strong>Trích dẫn:</strong> "{info.evidence[0].quote}"
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Unified Multi-Criteria Assessment (Skills, Exp, Projects, Education) */}
+          <UnifiedCriteriaAssessment 
+            result={result} 
+            title="Đánh giá Đa Tiêu chí AI (Gemini)" 
+          />
 
           {/* Feature Scores */}
           <div className="match-cv-card__detail-section">

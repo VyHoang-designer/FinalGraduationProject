@@ -8,6 +8,7 @@ import {
   generateAICV, saveGeneratedCV, fetchMyGeneratedCVs, deleteGeneratedCV, 
   applyGeneratedCVToJob, evaluateGeneratedCVMatch, confirmApplyGeneratedCV, fetchJobs 
 } from '../services/api';
+import UnifiedCriteriaAssessment from './UnifiedCriteriaAssessment';
 
 const COLOR_THEMES = [
   { id: 'navy', name: 'Navy Blue', primary: '#1e40af', secondary: '#eff6ff', accent: '#3b82f6' },
@@ -1669,40 +1670,11 @@ export default function CVBuilderModal({ isOpen, onClose, currentUser, targetJob
                       </div>
                     </div>
 
-                    {/* PHÂN TÍCH KỸ NĂNG TỪ GEMINI LLM (nếu có) */}
-                    {evaluationResult.skill_details && evaluationResult.skill_details.length > 0 && (
-                      <div className="cv-eval-llm-section">
-                        <h4 className="cv-eval-col-title" style={{ marginBottom: '8px' }}>
-                          <span>🤖</span> Đánh giá Kỹ năng Chi tiết từ Gemini LLM
-                        </h4>
-                        <div className="cv-eval-skills-table-wrap">
-                          <table className="cv-eval-skills-table">
-                            <thead>
-                              <tr>
-                                <th>Kỹ năng</th>
-                                <th>Mức độ</th>
-                                <th>Lý do & Bằng chứng từ CV</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {evaluationResult.skill_details.map((sk, idx) => (
-                                <tr key={idx}>
-                                  <td><strong>{sk.skill}</strong></td>
-                                  <td>
-                                    <span className={`badge ${sk.m >= 0.75 ? 'badge--success' : sk.m >= 0.5 ? 'badge--info' : 'badge--warning'}`}>
-                                      Mức {Math.round(sk.m * 4)} (m={sk.m})
-                                    </span>
-                                  </td>
-                                  <td style={{ fontSize: '0.8rem', color: '#475569' }}>
-                                    {sk.reason}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
+                    {/* ĐÁNH GIÁ ĐA TIÊU CHÍ TOÀN DIỆN TỪ GEMINI LLM */}
+                    <UnifiedCriteriaAssessment 
+                      result={evaluationResult} 
+                      title="Đánh giá Đa Tiêu chí Toàn diện từ Gemini LLM" 
+                    />
                   </>
                 )}
               </div>
