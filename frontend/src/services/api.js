@@ -13,6 +13,10 @@ const getBackendOrigin = () => {
   if (typeof window !== 'undefined') {
     const customUrl = localStorage.getItem('aimatcher_backend_url');
     if (customUrl) return customUrl;
+    // Tự động nhận diện host/IP khi deploy trên máy chủ EC2 hoặc domain thật
+    if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return window.location.origin;
+    }
   }
   return DEFAULT_LOCAL_BACKEND;
 };
