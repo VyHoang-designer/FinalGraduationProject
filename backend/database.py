@@ -20,9 +20,11 @@ if not DATABASE_URL:
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "matching.db")
     DATABASE_URL = f"sqlite:///{db_path}"
 
-# Chuẩn hóa URL PostgreSQL nếu bắt đầu bằng postgres:// (SQLAlchemy yêu cầu postgresql://)
+# Chuẩn hóa URL PostgreSQL để luôn dùng psycopg2 driver
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
