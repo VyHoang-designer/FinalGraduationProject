@@ -14,8 +14,17 @@ API Endpoints:
 """
 
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
+
+# Đảm bảo thư mục backend và thư mục gốc dự án luôn có trong sys.path
+_backend_dir = os.path.dirname(os.path.abspath(__file__))
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+_root_dir = os.path.dirname(_backend_dir)
+if _root_dir not in sys.path:
+    sys.path.insert(1, _root_dir)
 
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
