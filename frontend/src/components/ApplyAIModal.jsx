@@ -1199,6 +1199,11 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                     ⚠️ Cảnh báo: Tất cả minh chứng bạn vừa gửi đều bị từ chối do nội dung tệp/mô tả không khớp với tiêu chí đã chọn. Vui lòng bấm "← Quay lại" để bổ sung đúng tài liệu; nếu vẫn tiếp tục, hệ thống sẽ giữ nguyên điểm gốc ban đầu.
                   </div>
                 )}
+                {auditOverview.audit_notes && (
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', padding: '4px 6px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                    ℹ️ {auditOverview.audit_notes}
+                  </div>
+                )}
               </div>
             )}
 

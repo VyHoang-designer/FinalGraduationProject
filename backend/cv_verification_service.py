@@ -63,14 +63,50 @@ def _extract_evidence_artifact(file_url: Optional[str]) -> Dict[str, Any]:
     ext = os.path.splitext(file_path)[1].lower()
     mime_type, _ = mimetypes.guess_type(file_path)
 
-    # 1. Xử lý hình ảnh trực tiếp
+    # 1. Xử lý hình ảnh trực tiếp (Nén thông minh với Pillow để Vision đọc nhanh & không lỗi kích thước)
     if ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
         if not mime_type:
             mime_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else f"image/{ext.lstrip('.')}"
+        ocr_text = ""
         try:
             with open(file_path, "rb") as f:
                 img_bytes = f.read()
-            return {"found": True, "is_image": True, "mime_type": mime_type, "bytes": img_bytes, "text": ""}
+
+            # Nén/Resize ảnh lớn (> 600KB) sang JPEG chuẩn <= 1600px để tránh timeout/tải nặng
+            try:
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(img_bytes))
+                max_dim = 1600
+                if len(img_bytes) > 600_000 or max(img.size) > max_dim or img.mode in ("RGBA", "P"):
+                    if img.mode in ("RGBA", "LA", "P"):
+                        bg = Image.new("RGB", img.size, (255, 255, 255))
+                        if img.mode == "P":
+                            img = img.convert("RGBA")
+                        bg.paste(img, mask=img.split()[-1] if "A" in img.mode else None)
+                        img = bg
+                    elif img.mode != "RGB":
+                        img = img.convert("RGB")
+                    if max(img.size) > max_dim:
+                        img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=88, optimize=True)
+                    img_bytes = buf.getvalue()
+                    mime_type = "image/jpeg"
+            except Exception as img_ex:
+                print(f"[CV Verification] Bỏ qua bước nén ảnh ({img_ex}), dùng ảnh gốc.")
+
+            # Thử OCR offline dự phòng (nếu máy chủ có cài pytesseract/tesseract)
+            try:
+                import pytesseract
+                from PIL import Image
+                import io
+                ocr_img = Image.open(io.BytesIO(img_bytes))
+                ocr_text = pytesseract.image_to_string(ocr_img, lang="vie+eng").strip()[:3000]
+            except Exception:
+                pass
+
+            return {"found": True, "is_image": True, "mime_type": mime_type, "bytes": img_bytes, "text": ocr_text}
         except Exception as e:
             print(f"[CV Verification] Lỗi đọc file ảnh {file_path}: {e}")
             return {"found": False, "is_image": False, "mime_type": None, "bytes": None, "text": ""}
@@ -254,8 +290,15 @@ def audit_candidate_evidence_and_create_challenges(
         print("[CV Verification] Trả về kết quả thẩm định từ Cache (0ms).")
         return cached["data"]
 
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+    except Exception:
+        pass
+
     api_key = os.getenv("GEMINI_API_KEY")
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    fallback_reason = None
 
     # Đọc trước toàn bộ nội dung tệp minh chứng (ảnh / PDF / DOCX)
     enriched_evidences = []
@@ -365,7 +408,14 @@ Hãy đối chiếu kỹ nội dung HÌNH ẢNH ĐÍNH KÈM / VĂN BẢN TÀI LI
                     types.Part.from_bytes(data=va["bytes"], mime_type=va["mime_type"])
                 )
 
-            candidate_models = ["gemini-2.5-flash", model_name, "gemini-2.0-flash", "gemini-1.5-flash"]
+            candidate_models = [
+                "gemini-2.5-flash",
+                "gemini-3.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-flash-latest",
+                "gemini-2.5-flash-lite",
+                model_name
+            ]
             # Loại bỏ trùng lặp nhưng giữ thứ tự ưu tiên gemini-2.5-flash (hỗ trợ Vision cực tốt)
             seen_m = set()
             unique_models = [m for m in candidate_models if m and not (m in seen_m or seen_m.add(m))]
@@ -420,14 +470,23 @@ Hãy đối chiếu kỹ nội dung HÌNH ẢNH ĐÍNH KÈM / VĂN BẢN TÀI LI
                         return parsed
                 except Exception as ex:
                     last_err = ex
+                    print(f"[CV Verification] Model {m} lỗi: {ex}")
                     continue
+            fallback_reason = f"Gemini lỗi: {str(last_err)[:160]}"
             print(f"[CV Verification] Gemini gặp lỗi ({last_err}). Chuyển sang Smart Fallback Auditor.")
         except Exception as e:
+            fallback_reason = f"Lỗi khởi tạo Gemini: {str(e)[:160]}"
             print(f"[CV Verification] Lỗi khởi tạo Gemini ({e}). Kích hoạt Smart Fallback.")
+    else:
+        fallback_reason = "Thiếu cấu hình GEMINI_API_KEY trong môi trường backend"
 
     # Smart Fallback nếu không kết nối được Gemini
     fallback_res = _smart_fallback_audit(cv_info, jd_info, enriched_evidences)
-    _AUDIT_CACHE[cache_key] = {"ts": time.time(), "data": fallback_res}
+    if fallback_reason:
+        fallback_res["audit_notes"] = f"{fallback_res.get('audit_notes', '')} [Chẩn đoán: {fallback_reason}]"
+    # Chỉ cache fallback trong thời gian ngắn (tránh giữ kết quả fallback nếu mạng/key vừa phục hồi)
+    if fallback_res.get("can_proceed"):
+        _AUDIT_CACHE[cache_key] = {"ts": time.time(), "data": fallback_res}
     return fallback_res
 
 
