@@ -14,6 +14,7 @@ API Endpoints:
 """
 
 import os
+import re
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -1349,9 +1350,12 @@ def optimize_cv_for_jd(
     confirmed_gaps_list = [g.model_dump() for g in req.user_confirmed_gaps] if req.user_confirmed_gaps else []
     declared_evidences_list = [d.model_dump() for d in req.declared_evidences] if req.declared_evidences else []
 
-    # 3. Thẩm định bằng chứng & chấm bài kiểm tra nhanh (nếu có)
+    # 3. Thẩm định bằng chứng (kể cả đọc nội dung ảnh/file) & chấm bài kiểm tra nhanh
     audit_results = {}
     challenge_eval = {}
+    accepted_evidences_list = []
+    rejected_evidences_count = 0
+
     if declared_evidences_list:
         audit_results = audit_candidate_evidence_and_create_challenges(
             cv_info=cv_info,
@@ -1359,26 +1363,47 @@ def optimize_cv_for_jd(
             declared_evidences=declared_evidences_list,
             custom_instructions=req.custom_instructions
         )
+        audited_items = audit_results.get("audited_evidences", [])
+        accepted_names = {
+            (ae.get("criterion_name") or "").strip().lower()
+            for ae in audited_items
+            if ae.get("verdict") != "insufficient" and float(ae.get("credibility_score", 0.0)) >= 0.5
+        }
+        accepted_evidences_list = [
+            ev for ev in declared_evidences_list
+            if (ev.get("item_name") or "").strip().lower() in accepted_names
+        ]
+        rejected_evidences_count = len(declared_evidences_list) - len(accepted_evidences_list)
+
+        # Chỉ giữ lại các gap mà ứng viên thực sự vượt qua thẩm định
+        if confirmed_gaps_list:
+            confirmed_gaps_list = [
+                g for g in confirmed_gaps_list
+                if (g.get("skill") or "").strip().lower() in accepted_names
+            ]
+
         if req.challenge_answers:
             challenge_eval = evaluate_challenge_answers(
                 challenge_questions=audit_results.get("challenge_questions", []),
                 user_answers=[a.model_dump() for a in req.challenge_answers]
             )
 
+    # CHỈ truyền các bằng chứng ĐƯỢC CHẤP NHẬN (accepted_evidences_list) cho LLM Optimizer
     optimized_result = optimize_cv_for_jd_with_llm(
         cv_info=cv_info,
         jd_info=jd_info,
         user_confirmed_gaps=confirmed_gaps_list,
         custom_instructions=req.custom_instructions,
-        declared_evidences=declared_evidences_list,
+        declared_evidences=accepted_evidences_list,
         challenge_results=challenge_eval
     )
 
     opt_skills = optimized_result.get("optimized_skills", cand.parsed_skills or [])
     opt_summary = optimized_result.get("optimized_summary", "")
     opt_projects = optimized_result.get("optimized_projects", [])
+    changes_summary = list(optimized_result.get("changes_summary", []))
     
-    # Tạo chuỗi mô tả dự án và cv_text tối ưu
+    # Tạo chuỗi mô tả dự án và cv_text tối ưu (không nhồi từ khóa JD thô từ tiêu đề nếu chưa được xác thực)
     opt_project_descs = []
     opt_exp_bullets = []
     for p in opt_projects:
@@ -1387,9 +1412,10 @@ def optimize_cv_for_jd(
         opt_project_descs.append(desc)
         opt_exp_bullets.append(desc)
 
+    clean_jd_role = re.sub(r"\s*\(.*?\)", "", jd.title or "").strip()
     opt_cv_text = (
         f"Họ tên: {cand.full_name}\n"
-        f"Vị trí mục tiêu: {jd.title}\n"
+        f"Vị trí mục tiêu: {clean_jd_role}\n"
         f"Email: {cand.email}\n"
         f"Điện thoại: {cand.phone}\n"
         f"Tóm tắt chuyên môn: {opt_summary}\n"
@@ -1409,19 +1435,41 @@ def optimize_cv_for_jd(
     pred_level = str(new_eval.get("match_level", "Tương đối phù hợp"))
     verified_pillar_scores = new_eval.get("pillar_scores") or {}
 
-    # Đảm bảo điểm số phản ánh đúng chất lượng bằng chứng (nếu có bằng chứng xác thực và vượt qua test)
+    # 4b. Quy tắc Chống cộng điểm ảo (Strict Anti-Score-Gaming Enforcement)
     if declared_evidences_list:
-        cred = audit_results.get("overall_credibility", 0.7)
-        ch_score = challenge_eval.get("score_percent", 100.0)
-        # Hệ số điều chỉnh dựa trên độ tin cậy và bài test
-        multiplier = 0.5 + 0.5 * (cred * (ch_score / 100.0))
-        if pred_score <= orig_score:
-            pred_score = min(92.0, orig_score + 25.0 * multiplier)
+        if len(accepted_evidences_list) == 0:
+            # Toàn bộ bằng chứng đính kèm đều BỊ TỪ CHỐI -> Tuyệt đối KHÔNG cho tăng điểm!
+            pred_score = orig_score
+            pred_level = orig_level
+            verified_pillar_scores = orig_pillar_scores
+            changes_summary.insert(
+                0,
+                "⚠️ Cảnh báo thẩm định: Toàn bộ minh chứng bổ sung đã bị từ chối do nội dung không hợp lệ hoặc không liên quan đến tiêu chí đã chọn. Điểm số đánh giá giữ nguyên theo hồ sơ gốc."
+            )
+        else:
+            # Có bằng chứng hợp lệ -> Điều chỉnh công bằng theo tỷ lệ hợp lệ & kết quả Quick Tech Check
+            acceptance_ratio = len(accepted_evidences_list) / len(declared_evidences_list)
+            cred = float(audit_results.get("overall_credibility", 0.7))
+            ch_score = float(challenge_eval.get("score_percent", 100.0))
+            multiplier = acceptance_ratio * cred * (0.4 + 0.6 * (ch_score / 100.0))
+            if pred_score <= orig_score:
+                pred_score = min(92.0, orig_score + 20.0 * multiplier)
+            if rejected_evidences_count > 0:
+                changes_summary.insert(
+                    0,
+                    f"⚠️ Có {rejected_evidences_count}/{len(declared_evidences_list)} minh chứng bị từ chối do không khớp nội dung tiêu chí và KHÔNG được đưa vào CV hoặc tính điểm."
+                )
     else:
-        if pred_score <= orig_score:
-            pred_score = min(90.0, orig_score + 15.0)
+        # Không khai báo bằng chứng mới (chỉ tinh chỉnh câu chữ STAR) -> tối đa cộng nhẹ 5% nếu AI Engine chấm cao hơn
+        if pred_score > orig_score + 5.0:
+            pred_score = min(orig_score + 5.0, pred_score)
+        elif pred_score <= orig_score:
+            pred_score = orig_score
 
-    pred_level = "Rất phù hợp" if pred_score >= 80 else ("Phù hợp" if pred_score >= 65 else "Tương đối phù hợp")
+    if pred_score < orig_score:
+        pred_score = orig_score
+
+    pred_level = "Rất phù hợp" if pred_score >= 80 else ("Phù hợp" if pred_score >= 65 else ("Tương đối phù hợp" if pred_score >= 45 else "Cần cải thiện"))
 
     # 5. Đóng gói Audit Trail minh bạch cho Nhà tuyển dụng
     audit_trail = {
@@ -1433,6 +1481,8 @@ def optimize_cv_for_jd(
         "verified_pillar_scores": verified_pillar_scores,
         "audited_evidences": audit_results.get("audited_evidences", []),
         "overall_credibility": audit_results.get("overall_credibility", 1.0),
+        "accepted_count": len(accepted_evidences_list),
+        "rejected_count": rejected_evidences_count,
         "challenge_results": challenge_eval,
         "interview_probe_kit": audit_results.get("interview_probe_kit", [])
     }
@@ -1454,7 +1504,7 @@ def optimize_cv_for_jd(
         "optimized_projects": opt_projects,
         "optimized_experiences": optimized_result.get("optimized_experiences"),
         "added_keywords": optimized_result.get("added_keywords", []),
-        "changes_summary": optimized_result.get("changes_summary", []),
+        "changes_summary": changes_summary,
         "optimized_cv_text": opt_cv_text,
         "audit_trail": audit_trail,
         "interview_probe_kit": audit_results.get("interview_probe_kit", [])

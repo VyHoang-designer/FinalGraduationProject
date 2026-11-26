@@ -13,8 +13,9 @@ Nhiệm vụ của bạn: Giúp ứng viên biên tập và tối ưu hóa lại
 NGUYÊN TẮC BẮT BUỘC (CRITICAL ZERO-HALLUCINATION RULES):
 1. GIỮ VỮNG NGUỒN GỐC THẬT: Tuyệt đối không tự bịa ra công ty, bằng cấp, chứng chỉ hoặc dự án mà ứng viên không có trong CV gốc.
 2. XỬ LÝ KỸ NĂNG VÀ TỪ KHÓA BỔ SUNG:
-   - Chỉ bổ sung kỹ năng mới nếu ứng viên ĐÃ XÁC NHẬN trong danh sách 'user_confirmed_gaps' kèm bằng chứng/ghi chú của họ.
-   - Với các kỹ năng ứng viên CHƯA xác nhận, KHÔNG được tự ý đưa vào phần kỹ năng cốt lõi. Hãy tập trung khai thác các kỹ năng tương đương hoặc chuyển đổi (transferable skills) từ các dự án thật đã có.
+   - Chỉ bổ sung kỹ năng/dự án mới nếu ứng viên có mặt trong danh sách 'declared_evidences' ĐÃ ĐƯỢC THẨM ĐỊNH HỢP LỆ.
+   - Tuyệt đối KHÔNG sao chép các từ khóa kỹ năng trong tên chức danh của JD (ví dụ: không chép 'Selenium', 'Playwright' vào CV) nếu ứng viên chưa thực sự có kỹ năng đó!
+   - Với các kỹ năng ứng viên CHƯA xác thực hợp lệ, KHÔNG được đưa vào hồ sơ. Hãy tập trung biên tập các dự án thật đã có.
 3. TỐI ƯU CÂU TỪ THEO CHUẨN STAR:
    - Viết lại các gạch đầu dòng dự án theo cấu trúc: [Động từ hành động mạnh] + [Nhiệm vụ & Công nghệ] + [Mục tiêu giải quyết] + [Kết quả thực tế đạt được].
    - Lồng ghép khéo léo các từ khóa kỹ thuật của JD (ví dụ: test tự động, REST API, tối ưu hiệu năng, quy trình kiểm thử...) vào mô tả dự án mà ứng viên thực sự đã tham gia.
@@ -112,8 +113,8 @@ Hãy phân tích và trả về JSON theo đúng cấu trúc sau:
                 f"{schema_instruction}"
             )
 
-            # Danh sách model ứng viên
-            candidate_models = [model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+            # Danh sách model ứng viên (ưu tiên gemini-2.5-flash)
+            candidate_models = ["gemini-2.5-flash", model_name, "gemini-2.0-flash", "gemini-1.5-flash"]
             last_err = None
 
             for m in candidate_models:
@@ -158,6 +159,7 @@ def _smart_fallback_optimize_cv(
     Đảm bảo 100% không bao giờ gián đoạn trải nghiệm người dùng khi offline hoặc hết quota Gemini.
     """
     target_title = jd_info.get("title", "Kỹ sư Công nghệ thông tin")
+    clean_role_title = re.sub(r"\s*\(.*?\)", "", target_title).strip() or target_title
     dept = jd_info.get("department", "doanh nghiệp")
     req_skills_raw = jd_info.get("required_skills", [])
     
@@ -215,9 +217,9 @@ def _smart_fallback_optimize_cv(
     top_skills_str = ", ".join(matched_skills[:4]) if matched_skills else ", ".join(all_optimized_skills[:4])
     
     optimized_summary = (
-        f"Chuyên viên {target_title} với {exp_years:.1f} năm kinh nghiệm thực chiến trong phát triển "
-        f"và đảm bảo chất lượng hệ thống phần mềm. Thành thạo {top_skills_str}. "
-        f"Có tư duy giải quyết vấn đề mạch lạc, nắm vững các quy trình phát triển Agile/Scrum "
+        f"Ứng viên định hướng vị trí {clean_role_title} với {exp_years:.1f} năm kinh nghiệm trong phát triển "
+        f"hệ thống phần mềm. Nền tảng kỹ năng hiện có: {top_skills_str}. "
+        f"Có tư duy giải quyết vấn đề mạch lạc, nắm vững quy trình phát triển Agile/Scrum "
         f"và sẵn sàng đồng hành cùng đội ngũ {dept} tạo ra các sản phẩm công nghệ chất lượng cao."
     )
 
@@ -236,20 +238,20 @@ def _smart_fallback_optimize_cv(
             p_desc = parts[1].strip()
 
         bullets = [
-            f"Tham gia triển khai và tối ưu các module trọng tâm sử dụng {', '.join(matched_skills[:3]) if matched_skills else 'các công nghệ cốt lõi'}.",
+            f"Tham gia triển khai và tối ưu các module trọng tâm sử dụng {', '.join(matched_skills[:3]) if matched_skills else 'các công nghệ hiện có'}.",
             f"Thiết kế và chuẩn hóa luồng xử lý dữ liệu, kiểm thử tích hợp nhằm đảm bảo hiệu năng và độ ổn định cao.",
             f"Đóng góp xây dựng kiến trúc mã nguồn sạch, phối hợp nhịp nhàng cùng các thành viên trong nhóm hoàn thành mục tiêu đúng tiến độ."
         ]
         
         optimized_projects.append({
             "name": p_name,
-            "role": f"Thành viên phát triển ({target_title})",
+            "role": f"Thành viên phát triển ({clean_role_title})",
             "technologies": matched_skills[:4] or all_optimized_skills[:4],
             "bullet_points": bullets,
             "source_tag": "original"
         })
 
-    # Bổ sung các dự án đã khai báo có bằng chứng
+    # Bổ sung các dự án đã khai báo có bằng chứng hợp lệ
     for dev in declared_evidences:
         if dev.get("pillar") == "projects":
             p_name = dev.get("item_name", "Dự án Bổ sung")
@@ -262,7 +264,7 @@ def _smart_fallback_optimize_cv(
             ]
             optimized_projects.append({
                 "name": p_name,
-                "role": f"Nhà phát triển chính ({target_title})",
+                "role": f"Nhà phát triển chính ({clean_role_title})",
                 "technologies": matched_skills[:3],
                 "bullet_points": bullets,
                 "source_tag": "verified_declaration"
@@ -270,29 +272,29 @@ def _smart_fallback_optimize_cv(
 
     if not optimized_projects:
         optimized_projects.append({
-            "name": f"Hệ thống ứng dụng cho {target_title}",
-            "role": target_title,
+            "name": f"Hệ thống ứng dụng cho {clean_role_title}",
+            "role": clean_role_title,
             "technologies": matched_skills[:4],
             "bullet_points": [
-                f"Nghiên cứu và xây dựng giải pháp công nghệ đáp ứng tiêu chuẩn {target_title}.",
+                f"Nghiên cứu và xây dựng giải pháp công nghệ đáp ứng tiêu chuẩn {clean_role_title}.",
                 "Kiểm thử chức năng, khắc phục lỗi và tối ưu trải nghiệm vận hành.",
                 "Đạt kết quả vận hành ổn định và được đánh giá cao về chất lượng hoàn thiện."
             ]
         })
 
     return {
-        "optimized_headline": f"{target_title} | Chuyên viên Công nghệ thông tin",
+        "optimized_headline": f"{clean_role_title} | Chuyên viên Công nghệ thông tin",
         "optimized_summary": optimized_summary,
         "optimized_skills": all_optimized_skills,
         "optimized_skills_categorized": {
-            f"Kỹ năng Trọng tâm ({target_title})": matched_skills,
+            f"Kỹ năng Trọng tâm ({clean_role_title})": matched_skills,
             "Kỹ năng Bổ trợ & Nền tảng": other_skills
         },
         "optimized_projects": optimized_projects,
         "added_keywords": matched_skills,
         "changes_summary": [
-            f"Đã định hướng mục tiêu nghề nghiệp trực tiếp theo vị trí '{target_title}'.",
-            f"Đã làm nổi bật và đưa các kỹ năng phù hợp nhất ({', '.join(matched_skills[:3])}) lên vị trí ưu tiên.",
+            f"Đã định hướng mục tiêu nghề nghiệp trực tiếp theo vị trí '{clean_role_title}'.",
+            f"Đã làm nổi bật các kỹ năng phù hợp ({', '.join(matched_skills[:3]) or 'hiện có'}) lên vị trí ưu tiên.",
             "Đã biên tập lại mô tả dự án theo phương pháp STAR với các động từ hành động mạnh mẽ."
         ]
     }

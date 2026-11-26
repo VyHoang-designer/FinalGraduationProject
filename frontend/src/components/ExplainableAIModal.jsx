@@ -208,14 +208,18 @@ export default function ExplainableAIModal({ result, onClose }) {
                     🔍 Bằng chứng ứng viên đã cung cấp & Kết quả thẩm định:
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {features.audit_trail.audited_evidences.map((ev, eidx) => (
-                      <div key={eidx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px' }}>
+                    {features.audit_trail.audited_evidences.map((ev, eidx) => {
+                      const isRejected = ev.verdict === 'insufficient' || ev.credibility_score < 0.45;
+                      const isHigh = !isRejected && ev.verdict === 'verified_high';
+                      const isPlausible = !isRejected && ev.verdict === 'verified_plausible';
+                      return (
+                      <div key={eidx} style={{ background: isRejected ? '#fef2f2' : '#f8fafc', border: `1px solid ${isRejected ? '#fca5a5' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px 12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: 700, color: '#1e293b', fontSize: '0.88rem' }}>
+                          <span style={{ fontWeight: 700, color: isRejected ? '#991b1b' : '#1e293b', fontSize: '0.88rem' }}>
                             {ev.pillar === 'skills' ? '⚡' : (ev.pillar === 'experience' ? '💼' : (ev.pillar === 'projects' ? '🚀' : '🎓'))} {ev.criterion_name}
                           </span>
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: ev.verdict === 'verified_high' ? '#15803d' : '#4338ca', background: ev.verdict === 'verified_high' ? '#dcfce7' : '#e0e7ff', padding: '2px 8px', borderRadius: '4px' }}>
-                            {ev.verdict === 'verified_high' ? '✓ Xác thực cao' : '✓ Hợp lý'} ({Math.round(ev.credibility_score * 100)}%)
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: isRejected ? '#b91c1c' : (isHigh ? '#15803d' : (isPlausible ? '#4338ca' : '#b45309')), background: isRejected ? '#fee2e2' : (isHigh ? '#dcfce7' : (isPlausible ? '#e0e7ff' : '#fef3c7')), padding: '2px 8px', borderRadius: '4px' }}>
+                            {isRejected ? '✕ Không hợp lệ / Từ chối' : (isHigh ? '✓ Xác thực cao' : (isPlausible ? '✓ Hợp lý' : '⚠ Ghi nhận một phần'))} ({Math.round(ev.credibility_score * 100)}%)
                           </span>
                         </div>
                         <div style={{ fontSize: '0.82rem', color: '#475569', marginBottom: '4px' }}>
@@ -249,7 +253,8 @@ export default function ExplainableAIModal({ result, onClose }) {
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

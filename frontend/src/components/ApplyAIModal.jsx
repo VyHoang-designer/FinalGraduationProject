@@ -1148,14 +1148,59 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
               </h3>
             </div>
 
-            <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '14px 16px', marginBottom: '16px' }}>
+            <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
               <div style={{ fontWeight: 600, color: '#6d28d9', marginBottom: '4px', fontSize: '0.92rem' }}>
                 ⚡ Kiểm tra xác thực năng lực thực tế:
               </div>
               <p style={{ margin: 0, fontSize: '0.86rem', color: '#5b21b6', lineHeight: 1.5 }}>
-                Vui lòng trả lời 2 câu hỏi trắc nghiệm tình huống thực tế dưới đây để xác nhận kiến thức với các công nghệ bạn vừa khai báo. Kết quả sẽ được ghi nhận vào <strong>Nhật ký Minh bạch (Audit Trail)</strong> gửi đến Nhà tuyển dụng.
+                Vui lòng trả lời 2 câu hỏi trắc nghiệm tình huống thực tế dưới đây để xác nhận kiến thức. Kết quả thẩm định tệp minh chứng và bài kiểm tra sẽ được ghi nhận vào <strong>Nhật ký Minh bạch (Audit Trail)</strong>.
               </p>
             </div>
+
+            {/* KẾT QUẢ THẨM ĐỊNH TỆP & BẰNG CHỨNG TỨC THÌ TỪ AI VISION */}
+            {auditOverview?.audited_evidences && auditOverview.audited_evidences.length > 0 && (
+              <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#334155' }}>
+                  🔍 Kết quả AI kiểm định tệp / bằng chứng vừa gửi:
+                </div>
+                {auditOverview.audited_evidences.map((ae, aidx) => {
+                  const isRejected = ae.verdict === 'insufficient' || ae.credibility_score < 0.5;
+                  return (
+                    <div key={aidx} style={{
+                      background: isRejected ? '#fef2f2' : '#f0fdf4',
+                      border: `1.5px solid ${isRejected ? '#fca5a5' : '#86efac'}`,
+                      borderRadius: '10px',
+                      padding: '10px 14px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '8px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.88rem', color: isRejected ? '#991b1b' : '#166534' }}>
+                          {isRejected ? '❌' : '✅'} {ae.criterion_name}
+                        </span>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          background: isRejected ? '#fee2e2' : '#dcfce7',
+                          color: isRejected ? '#b91c1c' : '#15803d',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {isRejected ? `Không hợp lệ / Từ chối (${Math.round(ae.credibility_score * 100)}%)` : `Hợp lệ (${Math.round(ae.credibility_score * 100)}%)`}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: isRejected ? '#b91c1c' : '#15803d', lineHeight: 1.45 }}>
+                        {ae.audit_reason}
+                      </div>
+                    </div>
+                  );
+                })}
+                {auditOverview.can_proceed === false && (
+                  <div style={{ background: '#fff1f2', border: '1px solid #fda4af', borderRadius: '8px', padding: '10px 12px', fontSize: '0.83rem', color: '#9f1239', fontWeight: 600 }}>
+                    ⚠️ Cảnh báo: Tất cả minh chứng bạn vừa gửi đều bị từ chối do nội dung tệp/mô tả không khớp với tiêu chí đã chọn. Vui lòng bấm "← Quay lại" để bổ sung đúng tài liệu; nếu vẫn tiếp tục, hệ thống sẽ giữ nguyên điểm gốc ban đầu.
+                  </div>
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '360px', overflowY: 'auto', paddingRight: '4px', marginBottom: '16px' }}>
               {challengeQuestions.map((q, qidx) => (
@@ -1467,17 +1512,18 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                   {optimizedResult.audit_trail?.audited_evidences && optimizedResult.audit_trail.audited_evidences.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {optimizedResult.audit_trail.audited_evidences.map((item, idx) => {
-                        const isHigh = item.verdict === 'verified_high';
-                        const isPlausible = item.verdict === 'verified_plausible';
+                        const isRejected = item.verdict === 'insufficient' || item.credibility_score < 0.45;
+                        const isHigh = !isRejected && item.verdict === 'verified_high';
+                        const isPlausible = !isRejected && item.verdict === 'verified_plausible';
                         return (
                           <div key={idx} style={{
-                            background: '#ffffff',
-                            border: '1px solid #e2e8f0',
+                            background: isRejected ? '#fef2f2' : '#ffffff',
+                            border: `1px solid ${isRejected ? '#fca5a5' : '#e2e8f0'}`,
                             borderRadius: '10px',
                             padding: '12px 14px'
                           }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                              <span style={{ fontWeight: 700, color: '#1e293b', fontSize: '0.9rem' }}>
+                              <span style={{ fontWeight: 700, color: isRejected ? '#991b1b' : '#1e293b', fontSize: '0.9rem' }}>
                                 {item.pillar === 'skills' ? '⚡' : (item.pillar === 'experience' ? '💼' : (item.pillar === 'projects' ? '🚀' : '🎓'))} {item.criterion_name}
                               </span>
                               <span style={{
@@ -1485,10 +1531,10 @@ export default function ApplyAIModal({ job, currentUser, onClose, onApplied }) {
                                 fontWeight: 600,
                                 padding: '3px 8px',
                                 borderRadius: '6px',
-                                background: isHigh ? '#dcfce7' : (isPlausible ? '#e0e7ff' : '#fef3c7'),
-                                color: isHigh ? '#15803d' : (isPlausible ? '#4338ca' : '#b45309')
+                                background: isRejected ? '#fee2e2' : (isHigh ? '#dcfce7' : (isPlausible ? '#e0e7ff' : '#fef3c7')),
+                                color: isRejected ? '#b91c1c' : (isHigh ? '#15803d' : (isPlausible ? '#4338ca' : '#b45309'))
                               }}>
-                                {isHigh ? '✓ Xác thực cao' : (isPlausible ? '✓ Đồ án hợp lý' : 'Ghi nhận một phần')} ({Math.round(item.credibility_score * 100)}%)
+                                {isRejected ? '✕ Không hợp lệ / Từ chối' : (isHigh ? '✓ Xác thực cao' : (isPlausible ? '✓ Hợp lý / Có cơ sở' : '⚠ Ghi nhận một phần'))} ({Math.round(item.credibility_score * 100)}%)
                               </span>
                             </div>
                             <div style={{ fontSize: '0.82rem', color: '#475569', marginBottom: '4px' }}>
